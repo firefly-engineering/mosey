@@ -24,6 +24,7 @@ import (
 	"github.com/firefly-engineering/mosey/internal/transport"
 	httpbackend "github.com/firefly-engineering/mosey/internal/transport/http2"
 	libp2pbackend "github.com/firefly-engineering/mosey/internal/transport/libp2p"
+	unixbackend "github.com/firefly-engineering/mosey/internal/transport/unix"
 )
 
 // runControl dispatches `mosey control <subcmd>`. Each subcommand
@@ -113,8 +114,15 @@ func dialControl(ctx context.Context, cf *controlFlags, target string) (transpor
 		_ = libp2pBackend.Close()
 		return nil, nil, fmt.Errorf("http2 backend: %w", err)
 	}
-	multi, err := transport.Multi(libp2pBackend, httpBackend)
+	unixBackend, err := unixbackend.New(ctx, unixbackend.Options{})
 	if err != nil {
+		_ = httpBackend.Close()
+		_ = libp2pBackend.Close()
+		return nil, nil, fmt.Errorf("unix backend: %w", err)
+	}
+	multi, err := transport.Multi(libp2pBackend, httpBackend, unixBackend)
+	if err != nil {
+		_ = unixBackend.Close()
 		_ = httpBackend.Close()
 		_ = libp2pBackend.Close()
 		return nil, nil, err
@@ -122,12 +130,14 @@ func dialControl(ctx context.Context, cf *controlFlags, target string) (transpor
 	authed := auth.Wrap(multi, authenticator)
 	s, err := authed.Dial(ctx, target, api.ProtoControl)
 	if err != nil {
+		_ = unixBackend.Close()
 		_ = httpBackend.Close()
 		_ = libp2pBackend.Close()
 		return nil, nil, fmt.Errorf("open %s: %w", api.ProtoControl, err)
 	}
 	cleanup := func() {
 		_ = s.Close()
+		_ = unixBackend.Close()
 		_ = httpBackend.Close()
 		_ = libp2pBackend.Close()
 	}

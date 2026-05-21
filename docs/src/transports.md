@@ -1,8 +1,8 @@
 # Transports
 
 The `transport.Transport` interface is the only surface higher
-layers depend on. Two backends are included today; new ones plug in by
-implementing the same shape.
+layers depend on. Three backends are included today; new ones plug
+in by implementing the same shape.
 
 ```go
 type Transport interface {
@@ -75,16 +75,55 @@ The HTTP/2 backend is **dial-only** when constructed without a
 configure it: they're never servers, so there's no listening port
 to bind.
 
+## Unix domain socket backend
+
+[`internal/transport/unix`](../../internal/transport/unix/) speaks
+the `unix://` scheme. Same-host attaches only — no network port,
+no TLS, no libp2p bootstrap.
+
+```sh
+mosey launch --secret=hunter2 --listen=unix:///tmp/mosey.sock -- bash
+mosey attach --secret=hunter2 unix:///tmp/mosey.sock
+```
+
+Wire model: one socket per stream. On `Dial` the client opens a
+fresh `net.UnixConn`, writes a varint-length-prefixed protocol id,
+and the rest of the socket is the bidi byte stream. The server
+reads the prefix on accept and dispatches to the matching handler.
+No multiplexer — unix sockets are cheap enough that per-stream
+connections are a non-issue.
+
+Identity correlation across the auth → application stream sequence
+falls out of **peer credentials** rather than connection address.
+Each `accept(2)` on the server side pulls (uid, pid) via
+`SO_PEERCRED` (Linux) or `LOCAL_PEERCRED` + `LOCAL_PEERPID`
+(macOS) and surfaces them as `Stream.RemoteID()` like
+`"unix:uid=1000:pid=12345"`. The same caller process produces the
+same RemoteID across both streams, so `auth.Wrap` correlates them
+the same way it does with a libp2p peer id or an HTTP `RemoteAddr`.
+
+Limitations:
+
+- POSIX only (Linux + macOS today; Windows would need a different
+  peer-cred surface).
+- The listener path must fit the OS's `sun_path` cap — about 104
+  bytes on macOS, 108 on Linux. Use short paths under `/tmp/` or
+  `$XDG_RUNTIME_DIR`.
+- Stale socket files from a crashed launcher are removed on
+  `New()`; co-located launchers on the same path will race.
+
 ## When to use which
 
 | Constraint | Backend |
 |---|---|
+| Same-host attach (one daemon + local attacher) | unix (`--listen=unix:///path`) |
 | Two LAN hosts, no config | libp2p (`mosey launch` with no `--listen` picks libp2p:// by default) |
 | Two hosts on different networks, NAT each side | libp2p (relies on DCUtR) |
 | Browser bridge, or behind a corporate HTTPS-only proxy | http2 (`--listen=https://...`) |
 | Want both at once | both — repeat `--listen` |
 | Air-gapped LAN | libp2p with `--no-p2p-bootstrap` |
 | Want existing TLS infra (cert pinning, mTLS, ALB) | http2 |
+| Want to skip the network entirely for embedded use | unix |
 
 ## Implementing a new backend
 

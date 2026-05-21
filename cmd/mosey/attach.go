@@ -20,6 +20,7 @@ import (
 	"github.com/firefly-engineering/mosey/internal/transport"
 	httpbackend "github.com/firefly-engineering/mosey/internal/transport/http2"
 	libp2pbackend "github.com/firefly-engineering/mosey/internal/transport/libp2p"
+	unixbackend "github.com/firefly-engineering/mosey/internal/transport/unix"
 )
 
 func runAttach(args []string, stderr *os.File) int {
@@ -83,7 +84,14 @@ func runAttach(args []string, stderr *os.File) int {
 	}
 	defer func() { _ = httpBackend.Close() }()
 
-	multi, err := transport.Multi(libp2pBackend, httpBackend)
+	unixBackend, err := unixbackend.New(ctx, unixbackend.Options{}) // client-only
+	if err != nil {
+		fmt.Fprintln(stderr, "mosey attach:", err)
+		return 1
+	}
+	defer func() { _ = unixBackend.Close() }()
+
+	multi, err := transport.Multi(libp2pBackend, httpBackend, unixBackend)
 	if err != nil {
 		fmt.Fprintln(stderr, "mosey attach:", err)
 		return 1
