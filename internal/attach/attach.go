@@ -68,6 +68,27 @@ func Run(ctx context.Context, opts Options) error {
 	if err := opts.Host.Connect(ctx, opts.Target); err != nil {
 		return fmt.Errorf("ship/attach: connect %s: %w", opts.Target.ID, err)
 	}
+
+	// Open the control stream first so the remote has the right
+	// PTY size before any bytes flow on /pty/. Without this, full-
+	// screen TUIs (btop, htop, ncurses apps) read ws_col=0 and
+	// bail. Older vterms that don't advertise the control protocol
+	// fall through with control==nil — we still attach, just
+	// without size / signal forwarding.
+	control, err := newControlClient(ctx, opts.Host, opts.Target, logger)
+	if err != nil {
+		return err
+	}
+	if control != nil {
+		defer func() { _ = control.Close() }()
+		if cols, rows, sizeErr := localTerminalSize(stdin); sizeErr == nil && cols > 0 && rows > 0 {
+			if err := control.SendResize(cols, rows); err != nil {
+				logger.Warn("initial resize", "err", err)
+			}
+		}
+		go watchSIGWINCH(ctx, stdin, control, logger)
+	}
+
 	stream, err := opts.Host.NewStream(ctx, opts.Target.ID, api.ProtoPTY)
 	if err != nil {
 		return fmt.Errorf("ship/attach: open %s: %w", api.ProtoPTY, err)
