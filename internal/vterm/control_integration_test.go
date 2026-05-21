@@ -12,7 +12,7 @@ import (
 
 	"github.com/firefly-engineering/ship/internal/api"
 	"github.com/firefly-engineering/ship/internal/auth"
-	"github.com/firefly-engineering/ship/internal/transport"
+	libp2pbackend "github.com/firefly-engineering/ship/internal/transport/libp2p"
 	"github.com/firefly-engineering/ship/internal/vterm"
 )
 
@@ -33,7 +33,7 @@ func TestVterm_ResizeAppliesViaControlStream(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	vtermHost, err := transport.New(ctx, transport.Options{
+	vtermHost, err := libp2pbackend.New(ctx, libp2pbackend.Options{
 		Auth:      psk,
 		Bootstrap: []peer.AddrInfo{},
 	})
@@ -48,13 +48,13 @@ func TestVterm_ResizeAppliesViaControlStream(t *testing.T) {
 	script := "stty size; trap 'stty size' WINCH; while true; do sleep 0.1; done"
 	vtermDone := make(chan error, 1)
 	go func() {
-		vtermDone <- vterm.Run(ctx, vterm.Options{Host: vtermHost}, []string{"bash", "-c", script})
+		vtermDone <- vterm.Run(ctx, vterm.Options{Host: vtermHost.Host()}, []string{"bash", "-c", script})
 	}()
 
 	// Let vterm.Run register handlers + spawn the child.
 	time.Sleep(300 * time.Millisecond)
 
-	attachHost, err := transport.New(ctx, transport.Options{
+	attachHost, err := libp2pbackend.New(ctx, libp2pbackend.Options{
 		Auth:      psk,
 		Bootstrap: []peer.AddrInfo{},
 	})
@@ -63,13 +63,13 @@ func TestVterm_ResizeAppliesViaControlStream(t *testing.T) {
 	}
 	defer func() { _ = attachHost.Close() }()
 
-	target := peer.AddrInfo{ID: vtermHost.ID(), Addrs: vtermHost.Addrs()}
-	if err := attachHost.Connect(ctx, target); err != nil {
+	target := peer.AddrInfo{ID: vtermHost.Host().ID(), Addrs: vtermHost.Host().Addrs()}
+	if err := attachHost.Host().Connect(ctx, target); err != nil {
 		t.Fatalf("connect: %v", err)
 	}
 
 	// Open the PTY stream first so we can read output continuously.
-	ptyStream, err := attachHost.NewStream(ctx, target.ID, api.ProtoPTY)
+	ptyStream, err := attachHost.Host().NewStream(ctx, target.ID, api.ProtoPTY)
 	if err != nil {
 		t.Fatalf("open pty stream: %v", err)
 	}
@@ -97,7 +97,7 @@ func TestVterm_ResizeAppliesViaControlStream(t *testing.T) {
 	}
 
 	// Open the control stream and send a Resize to 40x120.
-	ctrl, err := attachHost.NewStream(ctx, target.ID, protocol.ID(api.ProtoControl))
+	ctrl, err := attachHost.Host().NewStream(ctx, target.ID, protocol.ID(api.ProtoControl))
 	if err != nil {
 		t.Fatalf("open control stream: %v", err)
 	}

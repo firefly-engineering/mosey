@@ -24,7 +24,7 @@ import (
 
 	"github.com/firefly-engineering/ship/internal/attach"
 	"github.com/firefly-engineering/ship/internal/auth"
-	"github.com/firefly-engineering/ship/internal/transport"
+	libp2pbackend "github.com/firefly-engineering/ship/internal/transport/libp2p"
 )
 
 func main() {
@@ -71,20 +71,20 @@ func run(args []string, stderr *os.File) int {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
-	hostOpts := transport.Options{Auth: psk}
+	backendOpts := libp2pbackend.Options{Auth: psk}
 	if *noBootstrap {
-		hostOpts.Bootstrap = []peer.AddrInfo{}
+		backendOpts.Bootstrap = []peer.AddrInfo{}
 	}
 
-	h, err := transport.New(ctx, hostOpts)
+	backend, err := libp2pbackend.New(ctx, backendOpts)
 	if err != nil {
 		fmt.Fprintln(stderr, "attach:", err)
 		return 1
 	}
-	defer func() { _ = h.Close() }()
+	defer func() { _ = backend.Close() }()
 
 	if err := attach.Run(ctx, attach.Options{
-		Host:   h,
+		Host:   backend.Host(),
 		Target: target,
 		Logger: logger,
 	}); err != nil {

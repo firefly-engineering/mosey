@@ -24,7 +24,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 
 	"github.com/firefly-engineering/ship/internal/auth"
-	"github.com/firefly-engineering/ship/internal/transport"
+	libp2pbackend "github.com/firefly-engineering/ship/internal/transport/libp2p"
 	"github.com/firefly-engineering/ship/internal/vterm"
 )
 
@@ -68,26 +68,27 @@ func run(args []string, stderr *os.File) int {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
-	hostOpts := transport.Options{Auth: psk}
+	backendOpts := libp2pbackend.Options{Auth: psk}
 	if *listen != "" {
 		// TODO: support comma-split + multiaddr.NewMultiaddr; for v1
 		// the default listen is fine. Leaving this hook in place.
 		fmt.Fprintln(stderr, "vterm: --listen is not yet implemented; ignoring")
 	}
 	if *noBootstrap {
-		hostOpts.Bootstrap = []peer.AddrInfo{} // explicit empty: skip bootstrap
+		backendOpts.Bootstrap = []peer.AddrInfo{} // explicit empty: skip bootstrap
 	}
 
-	h, err := transport.New(ctx, hostOpts)
+	backend, err := libp2pbackend.New(ctx, backendOpts)
 	if err != nil {
 		fmt.Fprintln(stderr, "vterm:", err)
 		return 1
 	}
-	defer func() { _ = h.Close() }()
+	defer func() { _ = backend.Close() }()
 
 	// Print the dialable multiaddrs so the user can paste one into
 	// `attach`. Use p2p-suffixed form so the consumer doesn't need
 	// to know the peer id separately.
+	h := backend.Host()
 	for _, a := range h.Addrs() {
 		fmt.Fprintf(stderr, "vterm listening: %s/p2p/%s\n", a, h.ID())
 	}

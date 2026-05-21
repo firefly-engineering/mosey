@@ -14,7 +14,7 @@ import (
 
 	"github.com/firefly-engineering/ship/internal/attach"
 	"github.com/firefly-engineering/ship/internal/auth"
-	"github.com/firefly-engineering/ship/internal/transport"
+	libp2pbackend "github.com/firefly-engineering/ship/internal/transport/libp2p"
 	"github.com/firefly-engineering/ship/internal/vterm"
 )
 
@@ -36,7 +36,7 @@ func TestVterm_AttachRoundTrip(t *testing.T) {
 	defer cancel()
 
 	// Host A: the vterm.
-	vtermHost, err := transport.New(ctx, transport.Options{
+	vtermHost, err := libp2pbackend.New(ctx, libp2pbackend.Options{
 		Auth:      psk,
 		Bootstrap: []peer.AddrInfo{},
 	})
@@ -49,7 +49,7 @@ func TestVterm_AttachRoundTrip(t *testing.T) {
 	// so anything attach sends should reappear on attach's stdout.
 	vtermDone := make(chan error, 1)
 	go func() {
-		vtermDone <- vterm.Run(ctx, vterm.Options{Host: vtermHost}, []string{"cat"})
+		vtermDone <- vterm.Run(ctx, vterm.Options{Host: vtermHost.Host()}, []string{"cat"})
 	}()
 
 	// Wait a beat for vterm.Run to register the stream handler.
@@ -59,7 +59,7 @@ func TestVterm_AttachRoundTrip(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 
 	// Host B: the attach client.
-	attachHost, err := transport.New(ctx, transport.Options{
+	attachHost, err := libp2pbackend.New(ctx, libp2pbackend.Options{
 		Auth:      psk,
 		Bootstrap: []peer.AddrInfo{},
 	})
@@ -69,8 +69,8 @@ func TestVterm_AttachRoundTrip(t *testing.T) {
 	defer func() { _ = attachHost.Close() }()
 
 	target := peer.AddrInfo{
-		ID:    vtermHost.ID(),
-		Addrs: vtermHost.Addrs(),
+		ID:    vtermHost.Host().ID(),
+		Addrs: vtermHost.Host().Addrs(),
 	}
 
 	// stdinR is what attach reads (we write bytes here to simulate
@@ -85,7 +85,7 @@ func TestVterm_AttachRoundTrip(t *testing.T) {
 	attachDone := make(chan error, 1)
 	go func() {
 		attachDone <- attach.Run(ctx, attach.Options{
-			Host:   attachHost,
+			Host:   attachHost.Host(),
 			Target: target,
 			Stdin:  stdinR,
 			Stdout: stdout,
