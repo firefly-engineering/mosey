@@ -73,6 +73,42 @@ func (s *Session) handleControl(stream transport.Stream) {
 				continue
 			}
 			s.logger.Info("client self-demoted to observer", "peer", remote)
+		case *api.ControlMessage_ListClients:
+			snap := s.listClients()
+			resp := &api.ControlMessage{
+				Payload: &api.ControlMessage_ClientList{
+					ClientList: &api.ClientList{Clients: snapshotToProto(snap)},
+				},
+			}
+			if _, err := protodelim.MarshalTo(stream, resp); err != nil {
+				s.logger.Warn("control list_clients response", "peer", remote, "err", err)
+				return
+			}
+		case *api.ControlMessage_Promote:
+			if !identity.IsOwner() {
+				s.logger.Info("control promote denied (no Owner cap)", "peer", remote, "role", identity.Label)
+				continue
+			}
+			target := payload.Promote.GetClientId()
+			if !s.promoteClient(target) {
+				s.logger.Info("control promote: no such client", "peer", remote, "target", target)
+				continue
+			}
+			s.logger.Info("client promoted", "peer", remote, "target", target)
+		case *api.ControlMessage_Kick:
+			if !identity.IsOwner() {
+				s.logger.Info("control kick denied (no Owner cap)", "peer", remote, "role", identity.Label)
+				continue
+			}
+			target := payload.Kick.GetClientId()
+			if !s.kickClient(target) {
+				s.logger.Info("control kick: no such client", "peer", remote, "target", target)
+				continue
+			}
+			s.logger.Info("client kicked", "peer", remote, "target", target)
+		case *api.ControlMessage_ClientList:
+			// Server-to-client message; vterm shouldn't receive it.
+			s.logger.Warn("control: unexpected client_list from peer", "peer", remote)
 		default:
 			s.logger.Warn("control: unknown payload", "peer", remote, "type", fmt.Sprintf("%T", payload))
 		}
@@ -131,6 +167,23 @@ func (s *Session) applySignal(sig *api.Signal) error {
 	}
 	s.logger.Debug("signal forwarded", "signal", os_signal.String())
 	return nil
+}
+
+// snapshotToProto converts the session's per-client snapshot
+// view to the wire form used by ClientList. Kept here rather than
+// in session.go so that file stays free of api imports.
+func snapshotToProto(snap []clientSnapshot) []*api.ClientInfo {
+	out := make([]*api.ClientInfo, 0, len(snap))
+	for _, c := range snap {
+		out = append(out, &api.ClientInfo{
+			ClientId: c.ID,
+			Label:    c.Label,
+			CanWrite: c.CanWrite,
+			Cols:     c.Cols,
+			Rows:     c.Rows,
+		})
+	}
+	return out
 }
 
 // delimReader is a tiny adapter to satisfy [protodelim.Reader] from

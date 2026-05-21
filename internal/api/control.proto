@@ -25,6 +25,10 @@ message ControlMessage {
     Signal signal = 2;
     SetMode set_mode = 3;
     Demote demote = 4;
+    ListClients list_clients = 5;
+    ClientList client_list = 6;
+    Promote promote = 7;
+    Kick kick = 8;
   }
 }
 
@@ -76,3 +80,52 @@ message SetMode {
 // let me typo into prod." No cap required — any client can demote
 // itself.
 message Demote {}
+
+// ListClients asks the vterm to enumerate currently-attached
+// clients. The server replies on the same control stream with a
+// ClientList message. Any authenticated client may issue this —
+// useful to non-Owner clients too (e.g. "who else is here").
+message ListClients {}
+
+// ClientList is the vterm's response to ListClients. Carries one
+// ClientInfo per attached client at the moment the request was
+// handled. The list is a snapshot, not a subscription.
+message ClientList {
+  repeated ClientInfo clients = 1;
+}
+
+// ClientInfo describes one attached client in the registry. Stable
+// fields only — internal session bookkeeping (channel depths, etc.)
+// stays off the wire.
+message ClientInfo {
+  // Stable identifier within the vterm session's lifetime. Used to
+  // target Promote / Kick. Not reused after a client disconnects.
+  int64 client_id = 1;
+
+  // Auth-layer role label ("owner", "reader", or a cert subject).
+  string label = 2;
+
+  // True when this client currently holds write permission given
+  // the session's mode + dynamic demotions.
+  bool can_write = 3;
+
+  // Latest reported terminal geometry, or zero if the client
+  // hasn't sent a Resize yet.
+  uint32 cols = 4;
+  uint32 rows = 5;
+}
+
+// Promote flips a client's write permission to true. Owner-only.
+// In PrimaryObserver, the promoted client becomes the writer seat
+// holder (a prior writer is demoted to observer). In MultiWrite /
+// Supersede / Exclusive, this is mostly a no-op since writers are
+// already permitted; the message exists for symmetry with Demote.
+message Promote {
+  int64 client_id = 1;
+}
+
+// Kick forcibly disconnects a client. Owner-only. The target's
+// PTY stream is closed; its attach.Run exits cleanly.
+message Kick {
+  int64 client_id = 1;
+}

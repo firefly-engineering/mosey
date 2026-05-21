@@ -158,6 +158,10 @@ type ControlMessage struct {
 	//	*ControlMessage_Signal
 	//	*ControlMessage_SetMode
 	//	*ControlMessage_Demote
+	//	*ControlMessage_ListClients
+	//	*ControlMessage_ClientList
+	//	*ControlMessage_Promote
+	//	*ControlMessage_Kick
 	Payload       isControlMessage_Payload `protobuf_oneof:"payload"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -236,6 +240,42 @@ func (x *ControlMessage) GetDemote() *Demote {
 	return nil
 }
 
+func (x *ControlMessage) GetListClients() *ListClients {
+	if x != nil {
+		if x, ok := x.Payload.(*ControlMessage_ListClients); ok {
+			return x.ListClients
+		}
+	}
+	return nil
+}
+
+func (x *ControlMessage) GetClientList() *ClientList {
+	if x != nil {
+		if x, ok := x.Payload.(*ControlMessage_ClientList); ok {
+			return x.ClientList
+		}
+	}
+	return nil
+}
+
+func (x *ControlMessage) GetPromote() *Promote {
+	if x != nil {
+		if x, ok := x.Payload.(*ControlMessage_Promote); ok {
+			return x.Promote
+		}
+	}
+	return nil
+}
+
+func (x *ControlMessage) GetKick() *Kick {
+	if x != nil {
+		if x, ok := x.Payload.(*ControlMessage_Kick); ok {
+			return x.Kick
+		}
+	}
+	return nil
+}
+
 type isControlMessage_Payload interface {
 	isControlMessage_Payload()
 }
@@ -256,6 +296,22 @@ type ControlMessage_Demote struct {
 	Demote *Demote `protobuf:"bytes,4,opt,name=demote,proto3,oneof"`
 }
 
+type ControlMessage_ListClients struct {
+	ListClients *ListClients `protobuf:"bytes,5,opt,name=list_clients,json=listClients,proto3,oneof"`
+}
+
+type ControlMessage_ClientList struct {
+	ClientList *ClientList `protobuf:"bytes,6,opt,name=client_list,json=clientList,proto3,oneof"`
+}
+
+type ControlMessage_Promote struct {
+	Promote *Promote `protobuf:"bytes,7,opt,name=promote,proto3,oneof"`
+}
+
+type ControlMessage_Kick struct {
+	Kick *Kick `protobuf:"bytes,8,opt,name=kick,proto3,oneof"`
+}
+
 func (*ControlMessage_Resize) isControlMessage_Payload() {}
 
 func (*ControlMessage_Signal) isControlMessage_Payload() {}
@@ -263,6 +319,14 @@ func (*ControlMessage_Signal) isControlMessage_Payload() {}
 func (*ControlMessage_SetMode) isControlMessage_Payload() {}
 
 func (*ControlMessage_Demote) isControlMessage_Payload() {}
+
+func (*ControlMessage_ListClients) isControlMessage_Payload() {}
+
+func (*ControlMessage_ClientList) isControlMessage_Payload() {}
+
+func (*ControlMessage_Promote) isControlMessage_Payload() {}
+
+func (*ControlMessage_Kick) isControlMessage_Payload() {}
 
 // Resize requests that the remote PTY be set to the given size
 // (TIOCSWINSZ-equivalent). Attach sends one on connect and again
@@ -459,16 +523,289 @@ func (*Demote) Descriptor() ([]byte, []int) {
 	return file_internal_api_control_proto_rawDescGZIP(), []int{4}
 }
 
+// ListClients asks the vterm to enumerate currently-attached
+// clients. The server replies on the same control stream with a
+// ClientList message. Any authenticated client may issue this —
+// useful to non-Owner clients too (e.g. "who else is here").
+type ListClients struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListClients) Reset() {
+	*x = ListClients{}
+	mi := &file_internal_api_control_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListClients) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListClients) ProtoMessage() {}
+
+func (x *ListClients) ProtoReflect() protoreflect.Message {
+	mi := &file_internal_api_control_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListClients.ProtoReflect.Descriptor instead.
+func (*ListClients) Descriptor() ([]byte, []int) {
+	return file_internal_api_control_proto_rawDescGZIP(), []int{5}
+}
+
+// ClientList is the vterm's response to ListClients. Carries one
+// ClientInfo per attached client at the moment the request was
+// handled. The list is a snapshot, not a subscription.
+type ClientList struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Clients       []*ClientInfo          `protobuf:"bytes,1,rep,name=clients,proto3" json:"clients,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ClientList) Reset() {
+	*x = ClientList{}
+	mi := &file_internal_api_control_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ClientList) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ClientList) ProtoMessage() {}
+
+func (x *ClientList) ProtoReflect() protoreflect.Message {
+	mi := &file_internal_api_control_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ClientList.ProtoReflect.Descriptor instead.
+func (*ClientList) Descriptor() ([]byte, []int) {
+	return file_internal_api_control_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *ClientList) GetClients() []*ClientInfo {
+	if x != nil {
+		return x.Clients
+	}
+	return nil
+}
+
+// ClientInfo describes one attached client in the registry. Stable
+// fields only — internal session bookkeeping (channel depths, etc.)
+// stays off the wire.
+type ClientInfo struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Stable identifier within the vterm session's lifetime. Used to
+	// target Promote / Kick. Not reused after a client disconnects.
+	ClientId int64 `protobuf:"varint,1,opt,name=client_id,json=clientId,proto3" json:"client_id,omitempty"`
+	// Auth-layer role label ("owner", "reader", or a cert subject).
+	Label string `protobuf:"bytes,2,opt,name=label,proto3" json:"label,omitempty"`
+	// True when this client currently holds write permission given
+	// the session's mode + dynamic demotions.
+	CanWrite bool `protobuf:"varint,3,opt,name=can_write,json=canWrite,proto3" json:"can_write,omitempty"`
+	// Latest reported terminal geometry, or zero if the client
+	// hasn't sent a Resize yet.
+	Cols          uint32 `protobuf:"varint,4,opt,name=cols,proto3" json:"cols,omitempty"`
+	Rows          uint32 `protobuf:"varint,5,opt,name=rows,proto3" json:"rows,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ClientInfo) Reset() {
+	*x = ClientInfo{}
+	mi := &file_internal_api_control_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ClientInfo) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ClientInfo) ProtoMessage() {}
+
+func (x *ClientInfo) ProtoReflect() protoreflect.Message {
+	mi := &file_internal_api_control_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ClientInfo.ProtoReflect.Descriptor instead.
+func (*ClientInfo) Descriptor() ([]byte, []int) {
+	return file_internal_api_control_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *ClientInfo) GetClientId() int64 {
+	if x != nil {
+		return x.ClientId
+	}
+	return 0
+}
+
+func (x *ClientInfo) GetLabel() string {
+	if x != nil {
+		return x.Label
+	}
+	return ""
+}
+
+func (x *ClientInfo) GetCanWrite() bool {
+	if x != nil {
+		return x.CanWrite
+	}
+	return false
+}
+
+func (x *ClientInfo) GetCols() uint32 {
+	if x != nil {
+		return x.Cols
+	}
+	return 0
+}
+
+func (x *ClientInfo) GetRows() uint32 {
+	if x != nil {
+		return x.Rows
+	}
+	return 0
+}
+
+// Promote flips a client's write permission to true. Owner-only.
+// In PrimaryObserver, the promoted client becomes the writer seat
+// holder (a prior writer is demoted to observer). In MultiWrite /
+// Supersede / Exclusive, this is mostly a no-op since writers are
+// already permitted; the message exists for symmetry with Demote.
+type Promote struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ClientId      int64                  `protobuf:"varint,1,opt,name=client_id,json=clientId,proto3" json:"client_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Promote) Reset() {
+	*x = Promote{}
+	mi := &file_internal_api_control_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Promote) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Promote) ProtoMessage() {}
+
+func (x *Promote) ProtoReflect() protoreflect.Message {
+	mi := &file_internal_api_control_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Promote.ProtoReflect.Descriptor instead.
+func (*Promote) Descriptor() ([]byte, []int) {
+	return file_internal_api_control_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *Promote) GetClientId() int64 {
+	if x != nil {
+		return x.ClientId
+	}
+	return 0
+}
+
+// Kick forcibly disconnects a client. Owner-only. The target's
+// PTY stream is closed; its attach.Run exits cleanly.
+type Kick struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ClientId      int64                  `protobuf:"varint,1,opt,name=client_id,json=clientId,proto3" json:"client_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Kick) Reset() {
+	*x = Kick{}
+	mi := &file_internal_api_control_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Kick) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Kick) ProtoMessage() {}
+
+func (x *Kick) ProtoReflect() protoreflect.Message {
+	mi := &file_internal_api_control_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Kick.ProtoReflect.Descriptor instead.
+func (*Kick) Descriptor() ([]byte, []int) {
+	return file_internal_api_control_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *Kick) GetClientId() int64 {
+	if x != nil {
+		return x.ClientId
+	}
+	return 0
+}
+
 var File_internal_api_control_proto protoreflect.FileDescriptor
 
 const file_internal_api_control_proto_rawDesc = "" +
 	"\n" +
-	"\x1ainternal/api/control.proto\x12\aship.v1\"\xcb\x01\n" +
+	"\x1ainternal/api/control.proto\x12\aship.v1\"\x91\x03\n" +
 	"\x0eControlMessage\x12)\n" +
 	"\x06resize\x18\x01 \x01(\v2\x0f.ship.v1.ResizeH\x00R\x06resize\x12)\n" +
 	"\x06signal\x18\x02 \x01(\v2\x0f.ship.v1.SignalH\x00R\x06signal\x12-\n" +
 	"\bset_mode\x18\x03 \x01(\v2\x10.ship.v1.SetModeH\x00R\asetMode\x12)\n" +
-	"\x06demote\x18\x04 \x01(\v2\x0f.ship.v1.DemoteH\x00R\x06demoteB\t\n" +
+	"\x06demote\x18\x04 \x01(\v2\x0f.ship.v1.DemoteH\x00R\x06demote\x129\n" +
+	"\flist_clients\x18\x05 \x01(\v2\x14.ship.v1.ListClientsH\x00R\vlistClients\x126\n" +
+	"\vclient_list\x18\x06 \x01(\v2\x13.ship.v1.ClientListH\x00R\n" +
+	"clientList\x12,\n" +
+	"\apromote\x18\a \x01(\v2\x10.ship.v1.PromoteH\x00R\apromote\x12#\n" +
+	"\x04kick\x18\b \x01(\v2\r.ship.v1.KickH\x00R\x04kickB\t\n" +
 	"\apayload\"0\n" +
 	"\x06Resize\x12\x12\n" +
 	"\x04cols\x18\x01 \x01(\rR\x04cols\x12\x12\n" +
@@ -490,7 +827,22 @@ const file_internal_api_control_proto_rawDesc = "" +
 	"\x0eKIND_EXCLUSIVE\x10\x02\x12\x19\n" +
 	"\x15KIND_PRIMARY_OBSERVER\x10\x03\x12\x14\n" +
 	"\x10KIND_MULTI_WRITE\x10\x04\"\b\n" +
-	"\x06DemoteB6Z4github.com/firefly-engineering/ship/internal/api;apib\x06proto3"
+	"\x06Demote\"\r\n" +
+	"\vListClients\";\n" +
+	"\n" +
+	"ClientList\x12-\n" +
+	"\aclients\x18\x01 \x03(\v2\x13.ship.v1.ClientInfoR\aclients\"\x84\x01\n" +
+	"\n" +
+	"ClientInfo\x12\x1b\n" +
+	"\tclient_id\x18\x01 \x01(\x03R\bclientId\x12\x14\n" +
+	"\x05label\x18\x02 \x01(\tR\x05label\x12\x1b\n" +
+	"\tcan_write\x18\x03 \x01(\bR\bcanWrite\x12\x12\n" +
+	"\x04cols\x18\x04 \x01(\rR\x04cols\x12\x12\n" +
+	"\x04rows\x18\x05 \x01(\rR\x04rows\"&\n" +
+	"\aPromote\x12\x1b\n" +
+	"\tclient_id\x18\x01 \x01(\x03R\bclientId\"#\n" +
+	"\x04Kick\x12\x1b\n" +
+	"\tclient_id\x18\x01 \x01(\x03R\bclientIdB6Z4github.com/firefly-engineering/ship/internal/api;apib\x06proto3"
 
 var (
 	file_internal_api_control_proto_rawDescOnce sync.Once
@@ -505,7 +857,7 @@ func file_internal_api_control_proto_rawDescGZIP() []byte {
 }
 
 var file_internal_api_control_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_internal_api_control_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
+var file_internal_api_control_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
 var file_internal_api_control_proto_goTypes = []any{
 	(Signal_Kind)(0),       // 0: ship.v1.Signal.Kind
 	(SetMode_Kind)(0),      // 1: ship.v1.SetMode.Kind
@@ -514,19 +866,29 @@ var file_internal_api_control_proto_goTypes = []any{
 	(*Signal)(nil),         // 4: ship.v1.Signal
 	(*SetMode)(nil),        // 5: ship.v1.SetMode
 	(*Demote)(nil),         // 6: ship.v1.Demote
+	(*ListClients)(nil),    // 7: ship.v1.ListClients
+	(*ClientList)(nil),     // 8: ship.v1.ClientList
+	(*ClientInfo)(nil),     // 9: ship.v1.ClientInfo
+	(*Promote)(nil),        // 10: ship.v1.Promote
+	(*Kick)(nil),           // 11: ship.v1.Kick
 }
 var file_internal_api_control_proto_depIdxs = []int32{
-	3, // 0: ship.v1.ControlMessage.resize:type_name -> ship.v1.Resize
-	4, // 1: ship.v1.ControlMessage.signal:type_name -> ship.v1.Signal
-	5, // 2: ship.v1.ControlMessage.set_mode:type_name -> ship.v1.SetMode
-	6, // 3: ship.v1.ControlMessage.demote:type_name -> ship.v1.Demote
-	0, // 4: ship.v1.Signal.kind:type_name -> ship.v1.Signal.Kind
-	1, // 5: ship.v1.SetMode.kind:type_name -> ship.v1.SetMode.Kind
-	6, // [6:6] is the sub-list for method output_type
-	6, // [6:6] is the sub-list for method input_type
-	6, // [6:6] is the sub-list for extension type_name
-	6, // [6:6] is the sub-list for extension extendee
-	0, // [0:6] is the sub-list for field type_name
+	3,  // 0: ship.v1.ControlMessage.resize:type_name -> ship.v1.Resize
+	4,  // 1: ship.v1.ControlMessage.signal:type_name -> ship.v1.Signal
+	5,  // 2: ship.v1.ControlMessage.set_mode:type_name -> ship.v1.SetMode
+	6,  // 3: ship.v1.ControlMessage.demote:type_name -> ship.v1.Demote
+	7,  // 4: ship.v1.ControlMessage.list_clients:type_name -> ship.v1.ListClients
+	8,  // 5: ship.v1.ControlMessage.client_list:type_name -> ship.v1.ClientList
+	10, // 6: ship.v1.ControlMessage.promote:type_name -> ship.v1.Promote
+	11, // 7: ship.v1.ControlMessage.kick:type_name -> ship.v1.Kick
+	0,  // 8: ship.v1.Signal.kind:type_name -> ship.v1.Signal.Kind
+	1,  // 9: ship.v1.SetMode.kind:type_name -> ship.v1.SetMode.Kind
+	9,  // 10: ship.v1.ClientList.clients:type_name -> ship.v1.ClientInfo
+	11, // [11:11] is the sub-list for method output_type
+	11, // [11:11] is the sub-list for method input_type
+	11, // [11:11] is the sub-list for extension type_name
+	11, // [11:11] is the sub-list for extension extendee
+	0,  // [0:11] is the sub-list for field type_name
 }
 
 func init() { file_internal_api_control_proto_init() }
@@ -539,6 +901,10 @@ func file_internal_api_control_proto_init() {
 		(*ControlMessage_Signal)(nil),
 		(*ControlMessage_SetMode)(nil),
 		(*ControlMessage_Demote)(nil),
+		(*ControlMessage_ListClients)(nil),
+		(*ControlMessage_ClientList)(nil),
+		(*ControlMessage_Promote)(nil),
+		(*ControlMessage_Kick)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -546,7 +912,7 @@ func file_internal_api_control_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_internal_api_control_proto_rawDesc), len(file_internal_api_control_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   5,
+			NumMessages:   10,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

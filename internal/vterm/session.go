@@ -267,6 +267,70 @@ func (s *Session) demoteRemote(remote string) bool {
 	return true
 }
 
+// listClients snapshots the registry. Caller gets a freshly
+// allocated slice safe to consume without holding s.mu.
+func (s *Session) listClients() []clientSnapshot {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]clientSnapshot, 0, len(s.clients))
+	for _, c := range s.clients {
+		out = append(out, clientSnapshot{
+			ID:       c.id,
+			Label:    c.identity.Label,
+			CanWrite: c.canWrite,
+			Cols:     c.cols,
+			Rows:     c.rows,
+		})
+	}
+	return out
+}
+
+// clientSnapshot is the read-only view of one registry entry. The
+// wire form (api.ClientInfo) is derived from this in the control
+// handler so the session package stays free of api types.
+type clientSnapshot struct {
+	ID       int64
+	Label    string
+	CanWrite bool
+	Cols     uint32
+	Rows     uint32
+}
+
+// promoteClient flips the target client's write permission on. In
+// PrimaryObserver, the prior writer (if any) is demoted to keep
+// the "single writer" invariant. Returns true on success, false
+// when no client matched (already-disconnected target).
+func (s *Session) promoteClient(id int64) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	target, ok := s.clients[id]
+	if !ok {
+		return false
+	}
+	if s.mode == ModePrimaryObserver {
+		if prev, ok := s.clients[s.writerID]; ok && prev != target {
+			prev.canWrite = false
+		}
+		s.writerID = id
+	}
+	target.canWrite = true
+	return true
+}
+
+// kickClient evicts a client by id. The target's stream-close path
+// fires through its done channel; its handlePTY goroutines exit
+// and the registry entry is removed asynchronously. Returns true
+// on success, false when no client matched.
+func (s *Session) kickClient(id int64) bool {
+	s.mu.Lock()
+	c, ok := s.clients[id]
+	if ok {
+		c.kick()
+	}
+	s.mu.Unlock()
+	return ok
+}
+
 // removeClient drops a client from the registry and fires its
 // kick if it hadn't already. Safe to call from the handler's
 // defer regardless of who initiated the disconnect. Triggers a
