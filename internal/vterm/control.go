@@ -21,7 +21,7 @@ import (
 // closes its write side, the stream errors, or the service is torn
 // down. Always Closes the stream — backends decide whether that
 // translates to a clean half-close or a forceful tear-down.
-func (s *Service) handleControl(stream transport.Stream) {
+func (s *Session) handleControl(stream transport.Stream) {
 	remote := stream.RemoteID()
 	identity := auth.IdentityOf(stream)
 	s.logger.Info("control opened", "peer", remote, "role", identity.Label)
@@ -65,7 +65,7 @@ func (s *Service) handleControl(stream transport.Stream) {
 // applyResize updates the PTY winsize via TIOCSWINSZ. cols/rows = 0
 // is rejected — the kernel allows it but it puts curses apps into
 // a "size unknown" state that's worse than the previous size.
-func (s *Service) applyResize(r *api.Resize) error {
+func (s *Session) applyResize(r *api.Resize) error {
 	cols, rows := r.GetCols(), r.GetRows()
 	if cols == 0 || rows == 0 {
 		return fmt.Errorf("resize ignored: zero dimension (cols=%d rows=%d)", cols, rows)
@@ -80,7 +80,7 @@ func (s *Service) applyResize(r *api.Resize) error {
 // applySignal forwards a constrained signal kind to the child
 // process group. The allow-list is small on purpose; widening it
 // requires a per-vterm authn check that v1 doesn't have.
-func (s *Service) applySignal(sig *api.Signal) error {
+func (s *Session) applySignal(sig *api.Signal) error {
 	var os_signal os.Signal
 	switch sig.GetKind() {
 	case api.Signal_KIND_HUP:

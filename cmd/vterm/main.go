@@ -51,6 +51,7 @@ func run(args []string, stderr *os.File) int {
 	fs.SetOutput(stderr)
 	secret := fs.String("secret", "", "owner PSK; required. Attachers presenting this secret get full write + resize.")
 	readerSecret := fs.String("reader-secret", "", "optional reader PSK; attachers presenting it get observer (no write, no resize) access.")
+	mode := fs.String("mode", "supersede", "multi-client mode: supersede (newest wins) | exclusive (one at a time) | primary-observer (first writer + observers) | multi-write (everyone types)")
 	listens := stringSliceFlag{}
 	fs.Var(&listens, "listen", "backend listener; repeatable. Forms: libp2p:// (default — random TCP+QUIC ports) | http://host:port (h2c).")
 	noBootstrap := fs.Bool("no-p2p-bootstrap", false, "skip the IPFS public bootstrap set; useful for LAN-only / offline testing")
@@ -131,7 +132,13 @@ func run(args []string, stderr *os.File) int {
 		fmt.Fprintf(stderr, "vterm listening: %s\n", ep)
 	}
 
-	if err := vterm.Run(ctx, vterm.Options{Transport: authed, Logger: logger}, argv); err != nil {
+	parsedMode, err := vterm.ParseMode(*mode)
+	if err != nil {
+		fmt.Fprintln(stderr, "vterm:", err)
+		return 2
+	}
+
+	if err := vterm.Run(ctx, vterm.Options{Transport: authed, Logger: logger, Mode: parsedMode}, argv); err != nil {
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) {
 			return exitErr.ExitCode()
