@@ -167,11 +167,11 @@ func TestMultiPSKAuth_OwnerAndReaderRoles(t *testing.T) {
 	})
 
 	cases := []struct {
-		name       string
-		client     *auth.PSKAuth
-		wantOwner  bool
-		wantWrite  bool
-		wantLabel  string
+		name      string
+		client    *auth.PSKAuth
+		wantOwner bool
+		wantWrite bool
+		wantLabel string
 	}{
 		{"owner role", ownerClient, true, true, auth.LabelOwner},
 		{"reader role", readerClient, false, false, auth.LabelReader},

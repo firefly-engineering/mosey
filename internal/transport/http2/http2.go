@@ -73,7 +73,7 @@ type Backend struct {
 	mu       sync.Mutex
 	handlers map[string]transport.Handler
 
-	clientH2C  *http.Client // for http:// (cleartext) dials
+	clientH2C   *http.Client // for http:// (cleartext) dials
 	clientHTTPS *http.Client // for https:// dials; nil when not needed
 }
 

@@ -13,7 +13,7 @@ import (
 // response body. Closing the writer half-closes the request body
 // (signals EOF to the server's r.Body.Read).
 type clientStream struct {
-	reader io.ReadCloser // resp.Body
+	reader io.ReadCloser  // resp.Body
 	writer io.WriteCloser // pipeW into req.Body
 	remote string
 
