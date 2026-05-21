@@ -68,10 +68,8 @@ func run(args []string, stderr *os.File) int {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
-	backendOpts := libp2pbackend.Options{Auth: psk}
+	backendOpts := libp2pbackend.Options{}
 	if *listen != "" {
-		// TODO: support comma-split + multiaddr.NewMultiaddr; for v1
-		// the default listen is fine. Leaving this hook in place.
 		fmt.Fprintln(stderr, "vterm: --listen is not yet implemented; ignoring")
 	}
 	if *noBootstrap {
@@ -85,13 +83,18 @@ func run(args []string, stderr *os.File) int {
 	}
 	defer func() { _ = backend.Close() }()
 
-	// Print the dialable endpoints so the user can paste one into
-	// `attach`.
-	for _, ep := range backend.Endpoints() {
+	// Wrap the libp2p backend with the app-layer auth handshake.
+	// Every Dial / inbound stream goes through PSK challenge-response
+	// before the application sees it. Serve installs the /ship/auth/
+	// listener on the inner transport.
+	authed := auth.Wrap(backend, psk)
+	authed.Serve()
+
+	for _, ep := range authed.Endpoints() {
 		fmt.Fprintf(stderr, "vterm listening: %s\n", ep)
 	}
 
-	if err := vterm.Run(ctx, vterm.Options{Transport: backend, Logger: logger}, argv); err != nil {
+	if err := vterm.Run(ctx, vterm.Options{Transport: authed, Logger: logger}, argv); err != nil {
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) {
 			return exitErr.ExitCode()

@@ -1,14 +1,14 @@
 // Package libp2p is the libp2p backend for ship's [transport.Transport].
 // It speaks the "libp2p://..." (or bare "/ip4/..." multiaddr)
 // scheme. Identity = a fresh Ed25519 key per Backend (Options.Identity
-// to persist); NAT hole-punching + AutoRelay default on, with IPFS
-// public bootstrap providing the relay swarm.
+// to persist); listeners default to TCP+QUIC on all interfaces; NAT
+// hole-punching + AutoRelay default on, with IPFS public bootstrap
+// providing the relay swarm.
 //
-// v1 still hosts PSK at the libp2p layer via [auth.Authenticator.HostOptions];
-// that limits us to TCP-only because libp2p's pnet protector doesn't
-// support QUIC. A later commit moves PSK out of the libp2p
-// transport into an application-layer handshake, at which point the
-// QUIC path comes back.
+// Authentication lives one level up (ship's application-layer
+// handshake on [api.ProtoAuth]) — this backend is plain libp2p
+// with DefaultTransports, so QUIC is in play and DCUtR
+// hole-punching actually works across NATs.
 package libp2p
 
 import (
@@ -27,7 +27,6 @@ import (
 	"github.com/libp2p/go-libp2p/p2p/security/noise"
 	"github.com/multiformats/go-multiaddr"
 
-	"github.com/firefly-engineering/ship/internal/auth"
 	"github.com/firefly-engineering/ship/internal/transport"
 )
 
@@ -37,11 +36,6 @@ const Scheme = "libp2p"
 
 // Options configures a [Backend].
 type Options struct {
-	// Auth supplies libp2p-layer authentication (PSK today). Required
-	// while PSK lives at the libp2p layer; will become optional once
-	// authentication moves to the application-layer handshake.
-	Auth auth.Authenticator
-
 	// Identity is the libp2p private key. Zero means "generate a
 	// fresh Ed25519 key" — fine for ephemeral processes; persist
 	// when you need a stable peer id across restarts (the cert
@@ -49,9 +43,9 @@ type Options struct {
 	Identity crypto.PrivKey
 
 	// ListenAddrs are the multiaddrs to bind. Zero means default
-	// (currently TCP-only because of the PSK + QUIC limitation).
-	// Pass an empty (non-nil) slice for "no listener" — useful
-	// for pure client-only configurations.
+	// (TCP + QUIC on all interfaces, random ports). Pass an empty
+	// (non-nil) slice for "no listener" — useful for client-only
+	// configurations.
 	ListenAddrs []multiaddr.Multiaddr
 
 	// Bootstrap is the set of public peers to use for DHT
@@ -65,10 +59,6 @@ type Options struct {
 // returned backend immediately starts listening; call Close to
 // release listener + outstanding streams.
 func New(ctx context.Context, opts Options) (*Backend, error) {
-	if opts.Auth == nil {
-		return nil, errors.New("libp2p: Options.Auth is required while PSK lives at the libp2p layer")
-	}
-
 	identity := opts.Identity
 	if identity == nil {
 		priv, _, err := crypto.GenerateEd25519Key(rand.Reader)
@@ -91,11 +81,11 @@ func New(ctx context.Context, opts Options) (*Backend, error) {
 	libp2pOpts := []libp2pgo.Option{
 		libp2pgo.Identity(identity),
 		libp2pgo.Security(noise.ID, noise.New),
+		libp2pgo.DefaultTransports,
 		libp2pgo.EnableHolePunching(),
 		libp2pgo.EnableNATService(),
 		libp2pgo.EnableRelay(),
 	}
-	libp2pOpts = append(libp2pOpts, opts.Auth.HostOptions()...)
 	if len(listenStrings) > 0 {
 		libp2pOpts = append(libp2pOpts, libp2pgo.ListenAddrStrings(listenStrings...))
 	} else {
@@ -233,9 +223,10 @@ func parseEndpoint(endpoint string) (peer.AddrInfo, error) {
 	return *info, nil
 }
 
-// defaultListenStrings is the listen-addr fallback. TCP only —
-// libp2p's pnet PSK doesn't speak QUIC, so we leave QUIC off until
-// PSK migrates out of the libp2p layer.
+// defaultListenStrings is the listen-addr fallback. Both TCP and
+// QUIC, random ports, all interfaces — auth lives at the app layer,
+// so neither transport needs pnet's TCP-only constraint.
 var defaultListenStrings = []string{
 	"/ip4/0.0.0.0/tcp/0",
+	"/ip4/0.0.0.0/udp/0/quic-v1",
 }

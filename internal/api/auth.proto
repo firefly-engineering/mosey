@@ -1,0 +1,52 @@
+// ship's application-layer authentication handshake. Carried on
+// the libp2p stream `/ship/auth/1.0.0` as length-delimited
+// [AuthMessage] envelopes. The underlying transport already
+// provides confidentiality + integrity (libp2p Noise, TLS, etc.);
+// this exchange just proves both parties hold the workspace's
+// shared secret.
+//
+// Three-message flow:
+//
+//   1. Client → Server: ClientHello { nonce_c }
+//   2. Server → Client: ServerProof { nonce_s, mac_s }
+//   3. Client → Server: ClientProof { mac_c }
+//
+//   mac_s = HMAC(secret, "ship-auth-v1:S" || nonce_c || nonce_s)
+//   mac_c = HMAC(secret, "ship-auth-v1:C" || nonce_s || nonce_c)
+//
+// Direction-specific MAC strings stop a passive attacker that
+// observes one direction's MAC from replaying it in the other.
+// Random nonces stop replay of an entire transcript.
+syntax = "proto3";
+
+package ship.v1;
+
+option go_package = "github.com/firefly-engineering/ship/internal/api;api";
+
+message AuthMessage {
+  oneof kind {
+    ClientHello client_hello = 1;
+    ServerProof server_proof = 2;
+    ClientProof client_proof = 3;
+  }
+}
+
+// ClientHello is the first message: the dialer picks 32 random
+// bytes and sends them as a challenge.
+message ClientHello {
+  bytes nonce = 1;
+}
+
+// ServerProof is the listener's response: its own 32-byte nonce
+// plus the HMAC over both nonces proving it knows the secret.
+message ServerProof {
+  bytes nonce = 1;
+  bytes mac = 2;
+}
+
+// ClientProof is the dialer's confirmation: the symmetric HMAC
+// proving it knows the secret, computed over the reversed nonce
+// order.
+message ClientProof {
+  bytes mac = 1;
+}

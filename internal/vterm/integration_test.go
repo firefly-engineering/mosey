@@ -35,42 +35,40 @@ func TestVterm_AttachRoundTrip(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	// Host A: the vterm.
-	vtermHost, err := libp2pbackend.New(ctx, libp2pbackend.Options{
-		Auth:      psk,
+	// Host A: the vterm. Wrap the libp2p backend in auth so every
+	// inbound stream goes through the /ship/auth/ handshake.
+	vtermBackend, err := libp2pbackend.New(ctx, libp2pbackend.Options{
 		Bootstrap: []peer.AddrInfo{},
 	})
 	if err != nil {
 		t.Fatalf("vterm host: %v", err)
 	}
-	defer func() { _ = vtermHost.Close() }()
+	defer func() { _ = vtermBackend.Close() }()
+	vtermAuthed := auth.Wrap(vtermBackend, psk)
+	vtermAuthed.Serve()
 
 	// Run `cat` under the vterm. Echoes its input back as output,
 	// so anything attach sends should reappear on attach's stdout.
 	vtermDone := make(chan error, 1)
 	go func() {
-		vtermDone <- vterm.Run(ctx, vterm.Options{Transport: vtermHost}, []string{"cat"})
+		vtermDone <- vterm.Run(ctx, vterm.Options{Transport: vtermAuthed}, []string{"cat"})
 	}()
 
-	// Wait a beat for vterm.Run to register the stream handler.
-	// Without this, attach can race and open the stream before the
-	// handler is up, which libp2p reports as "protocol not
-	// supported". 50ms is plenty for in-process.
+	// Wait for vterm.Run to register the stream handlers + spawn
+	// the child.
 	time.Sleep(100 * time.Millisecond)
 
 	// Host B: the attach client.
-	attachHost, err := libp2pbackend.New(ctx, libp2pbackend.Options{
-		Auth:      psk,
+	attachBackend, err := libp2pbackend.New(ctx, libp2pbackend.Options{
 		Bootstrap: []peer.AddrInfo{},
 	})
 	if err != nil {
 		t.Fatalf("attach host: %v", err)
 	}
-	defer func() { _ = attachHost.Close() }()
+	defer func() { _ = attachBackend.Close() }()
+	attachAuthed := auth.Wrap(attachBackend, psk)
 
-	// Vterm endpoints are in URI form; pick the first dialable one
-	// for the attach side.
-	endpoints := vtermHost.Endpoints()
+	endpoints := vtermAuthed.Endpoints()
 	if len(endpoints) == 0 {
 		t.Fatal("vterm host published no endpoints")
 	}
@@ -85,7 +83,7 @@ func TestVterm_AttachRoundTrip(t *testing.T) {
 	attachDone := make(chan error, 1)
 	go func() {
 		attachDone <- attach.Run(ctx, attach.Options{
-			Transport: attachHost,
+			Transport: attachAuthed,
 			Target:    target,
 			Stdin:     stdinR,
 			Stdout:    stdout,

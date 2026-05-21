@@ -32,39 +32,40 @@ func TestVterm_ResizeAppliesViaControlStream(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	vtermHost, err := libp2pbackend.New(ctx, libp2pbackend.Options{
-		Auth:      psk,
+	vtermBackend, err := libp2pbackend.New(ctx, libp2pbackend.Options{
 		Bootstrap: []peer.AddrInfo{},
 	})
 	if err != nil {
 		t.Fatalf("vterm host: %v", err)
 	}
-	defer func() { _ = vtermHost.Close() }()
+	defer func() { _ = vtermBackend.Close() }()
+	vtermAuthed := auth.Wrap(vtermBackend, psk)
+	vtermAuthed.Serve()
 
 	script := "stty size; trap 'stty size' WINCH; while true; do sleep 0.1; done"
 	vtermDone := make(chan error, 1)
 	go func() {
-		vtermDone <- vterm.Run(ctx, vterm.Options{Transport: vtermHost}, []string{"bash", "-c", script})
+		vtermDone <- vterm.Run(ctx, vterm.Options{Transport: vtermAuthed}, []string{"bash", "-c", script})
 	}()
 
 	time.Sleep(300 * time.Millisecond)
 
-	attachHost, err := libp2pbackend.New(ctx, libp2pbackend.Options{
-		Auth:      psk,
+	attachBackend, err := libp2pbackend.New(ctx, libp2pbackend.Options{
 		Bootstrap: []peer.AddrInfo{},
 	})
 	if err != nil {
 		t.Fatalf("attach host: %v", err)
 	}
-	defer func() { _ = attachHost.Close() }()
+	defer func() { _ = attachBackend.Close() }()
+	attachAuthed := auth.Wrap(attachBackend, psk)
 
-	endpoints := vtermHost.Endpoints()
+	endpoints := vtermAuthed.Endpoints()
 	if len(endpoints) == 0 {
 		t.Fatal("vterm host published no endpoints")
 	}
 	target := endpoints[0]
 
-	ptyStream, err := attachHost.Dial(ctx, target, api.ProtoPTY)
+	ptyStream, err := attachAuthed.Dial(ctx, target, api.ProtoPTY)
 	if err != nil {
 		t.Fatalf("open pty stream: %v", err)
 	}
@@ -88,7 +89,7 @@ func TestVterm_ResizeAppliesViaControlStream(t *testing.T) {
 		t.Fatalf("initial stty size never appeared; got: %q", output.String())
 	}
 
-	ctrl, err := attachHost.Dial(ctx, target, api.ProtoControl)
+	ctrl, err := attachAuthed.Dial(ctx, target, api.ProtoControl)
 	if err != nil {
 		t.Fatalf("open control stream: %v", err)
 	}

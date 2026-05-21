@@ -66,7 +66,7 @@ func run(args []string, stderr *os.File) int {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
-	backendOpts := libp2pbackend.Options{Auth: psk}
+	backendOpts := libp2pbackend.Options{}
 	if *noBootstrap {
 		backendOpts.Bootstrap = []peer.AddrInfo{}
 	}
@@ -78,8 +78,13 @@ func run(args []string, stderr *os.File) int {
 	}
 	defer func() { _ = backend.Close() }()
 
+	// Attach is client-only — Dial through the wrapper drives the
+	// /ship/auth/ handshake before opening the application stream.
+	// No Serve() call needed on this side.
+	authed := auth.Wrap(backend, psk)
+
 	if err := attach.Run(ctx, attach.Options{
-		Transport: backend,
+		Transport: authed,
 		Target:    target,
 		Logger:    logger,
 	}); err != nil {

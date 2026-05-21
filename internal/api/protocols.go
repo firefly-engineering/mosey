@@ -12,6 +12,13 @@ package api
 // the right to ship a breaking wire change while older peers
 // continue to negotiate the previous version.
 const (
+	// ProtoAuth carries the three-message [AuthMessage] handshake
+	// that proves both peers hold the workspace's shared secret.
+	// Dial-side opens this first; the auth wrapper around the
+	// transport only exposes application protocols to handlers
+	// after a successful exchange.
+	ProtoAuth = "/ship/auth/1.0.0"
+
 	// ProtoPTY is the bidirectional PTY byte stream. Attach opens
 	// this on the vterm host; vterm copies bytes between the stream
 	// and the child process's PTY master.

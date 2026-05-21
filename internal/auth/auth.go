@@ -1,47 +1,48 @@
-// Package auth abstracts how ship peers prove they're allowed to
-// talk to each other.
+// Package auth runs ship's application-layer authentication
+// handshake on top of any [transport.Transport].
 //
-// Today there's one [Authenticator] implementation: [PSKAuth], which
-// installs libp2p's pnet (private-network) protector — peers without
-// the matching pre-shared key fail the Noise handshake outright, so
-// no application protocol ever surfaces to an unauthorized caller.
+// The transport itself provides confidentiality + integrity (libp2p
+// Noise, TLS, etc.). This package adds *identity* — proves both
+// peers hold the same workspace secret (PSK today; cert-based
+// authenticator with workspace master key later). The handshake
+// runs on a fresh [api.ProtoAuth] stream per application stream;
+// failure closes the stream before any user handler sees it.
 //
-// The future direction is a cert-based [Authenticator] backed by a
-// workspace master key (12-word mnemonic CA). That implementation
-// will configure libp2p with a [connmgr.ConnectionGater] and consume
-// a "/ship/auth/1.0.0" handshake stream to validate the cert.
-// Either backend slots behind the same interface, so the higher-level
-// vterm / attach code never branches on which is in use.
+// [Wrap] turns any Transport into one that enforces the handshake
+// transparently — vterm and attach call `auth.Wrap(libp2pBackend, psk)`
+// and never deal with the auth wire format directly.
 package auth
 
 import (
-	"github.com/libp2p/go-libp2p"
-	"github.com/libp2p/go-libp2p/core/network"
-	"github.com/libp2p/go-libp2p/core/peer"
+	"context"
+	"errors"
+	"io"
 )
 
-// Authenticator decides whether a peer is allowed to participate in
-// the connection (via libp2p host options) and gets a post-Noise
-// hook to perform any application-layer verification.
+// Authenticator runs ship's authentication handshake from each side
+// of a freshly opened [api.ProtoAuth] stream. Implementations:
+//   - [PSKAuth]: HMAC challenge-response over a shared secret
+//   - (planned) workspace cert backend
 type Authenticator interface {
-	// Name is a short identifier used in logs and error messages
-	// (e.g. "psk", "cert"). Must be stable; the v1 wire format
-	// doesn't carry it.
+	// Name is a short identifier used in logs / errors ("psk",
+	// "cert"). Stable; not part of the wire format.
 	Name() string
 
-	// HostOptions returns the libp2p.Option slice the host must be
-	// constructed with. PSK installs a pnet protector; cert-based
-	// would install a connection gater.
-	HostOptions() []libp2p.Option
+	// ClientHandshake drives the handshake from the dialer side.
+	// Returning nil signals the application stream may proceed;
+	// returning an error closes the stream and (in the wrapper)
+	// propagates as a dial failure.
+	ClientHandshake(ctx context.Context, stream io.ReadWriteCloser) error
 
-	// VerifyPeer is called after a libp2p connection is fully
-	// established (Noise complete, security upgrades done). PSK
-	// returns nil — the pnet protector already gated the handshake.
-	// Cert-based reads the /ship/auth stream and validates the
-	// presented cert.
-	//
-	// Returning an error closes the connection. Implementations
-	// should be fast — VerifyPeer runs in the connection-accept
-	// path.
-	VerifyPeer(p peer.ID, conn network.Conn) error
+	// ServerHandshake drives the handshake from the listener side.
+	// Returning nil signals the inbound application stream may
+	// reach the registered handler; returning an error closes the
+	// stream silently.
+	ServerHandshake(ctx context.Context, stream io.ReadWriteCloser) error
 }
+
+// ErrUnauthorized is the canonical failure surface for handshake
+// rejection — wrong secret, malformed message, replay. Callers
+// distinguish "the peer wouldn't auth" from "the network broke"
+// via errors.Is(err, ErrUnauthorized).
+var ErrUnauthorized = errors.New("auth: peer failed authentication handshake")
