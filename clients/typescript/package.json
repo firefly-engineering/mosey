@@ -1,0 +1,41 @@
+{
+  "name": "@firefly-engineering/mosey-client",
+  "version": "0.0.0",
+  "description": "Reference TypeScript / browser client for mosey — peer-to-peer terminal sharing",
+  "license": "MIT",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "mosey",
+    "terminal",
+    "pty",
+    "websocket",
+    "xterm"
+  ]
+}

@@ -171,9 +171,10 @@ ws.binaryType = "arraybuffer";
 The companion auth and control protocols live on the same
 host:port under their own paths (`/mosey/auth/1.0.0`,
 `/mosey/control/1.0.0`). A browser-side mosey client also needs to
-speak the application-layer auth handshake — that lives in
-`internal/auth/` and isn't yet packaged for JS. Treat the wire
-spec in [design.md](design.md) as authoritative until then.
+speak the application-layer auth handshake — the reference
+implementation lives in
+[`clients/typescript/`](../../clients/typescript/) and runs in
+any modern browser or Node 22+.
 
 ## When to use which
 

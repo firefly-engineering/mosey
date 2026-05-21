@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>mosey · xterm.js demo</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.css" />
+    <style>
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+        margin: 0;
+        background: #1d1f21;
+        color: #c5c8c6;
+      }
+      header {
+        padding: 0.75rem 1rem;
+        background: #282a2e;
+        border-bottom: 1px solid #373b41;
+        display: flex;
+        gap: 0.5rem;
+        align-items: center;
+      }
+      header input,
+      header button {
+        font: inherit;
+        padding: 0.35rem 0.6rem;
+        border-radius: 4px;
+        border: 1px solid #373b41;
+        background: #1d1f21;
+        color: inherit;
+      }
+      #terminal {
+        height: calc(100vh - 70px);
+        padding: 0.5rem;
+      }
+      #status {
+        margin-left: auto;
+        font-size: 0.85rem;
+        color: #969896;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <input id="endpoint" placeholder="wss://host:8443" value="ws://127.0.0.1:8080" />
+      <input id="secret" placeholder="secret" type="password" />
+      <button id="connect">Connect</button>
+      <button id="disconnect" disabled>Disconnect</button>
+      <span id="status">idle</span>
+    </header>
+    <div id="terminal"></div>
+
+    <script type="module">
+      // For a real deployment, import from the built dist via your
+      // bundler. Here we use the unbundled source directly via
+      // relative paths so the demo works without npm install.
+      import { MoseyClient } from "../dist/index.js";
+
+      // xterm.js loaded via ESM bundle.
+      const { Terminal } = await import(
+        "https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/+esm"
+      );
+      const { FitAddon } = await import(
+        "https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/+esm"
+      );
+
+      const term = new Terminal({
+        cursorBlink: true,
+        theme: { background: "#1d1f21", foreground: "#c5c8c6" },
+        convertEol: true,
+      });
+      const fitAddon = new FitAddon();
+      term.loadAddon(fitAddon);
+      term.open(document.getElementById("terminal"));
+      fitAddon.fit();
+
+      const decoder = new TextDecoder();
+      const encoder = new TextEncoder();
+      const status = document.getElementById("status");
+      const connectBtn = document.getElementById("connect");
+      const disconnectBtn = document.getElementById("disconnect");
+      let client = null;
+
+      connectBtn.addEventListener("click", async () => {
+        const endpoint = document.getElementById("endpoint").value.trim();
+        const secret = document.getElementById("secret").value;
+        if (!endpoint || !secret) {
+          status.textContent = "need endpoint + secret";
+          return;
+        }
+        status.textContent = "connecting…";
+        try {
+          client = await MoseyClient.connect({
+            endpoint,
+            auth: { type: "psk", secret },
+          });
+        } catch (err) {
+          status.textContent = `connect failed: ${err.message}`;
+          return;
+        }
+        status.textContent = "connected";
+        connectBtn.disabled = true;
+        disconnectBtn.disabled = false;
+
+        client.onData((bytes) => term.write(decoder.decode(bytes)));
+        term.onData((str) => client.write(encoder.encode(str)));
+        term.onResize(({ cols, rows }) => void client.resize(cols, rows));
+        // Push the initial size so the remote PTY matches our viewport.
+        client.resize(term.cols, term.rows);
+
+        window.addEventListener("resize", () => fitAddon.fit());
+      });
+
+      disconnectBtn.addEventListener("click", async () => {
+        if (client) await client.close();
+        client = null;
+        status.textContent = "disconnected";
+        connectBtn.disabled = false;
+        disconnectBtn.disabled = true;
+      });
+    </script>
+  </body>
+</html>

@@ -127,6 +127,35 @@ proto-check:
     done
 
 # ──────────────────────────────────────────────────────────────────────
+# TypeScript reference client (clients/typescript/)
+#
+# Assumes Node 22+ on PATH. The flake doesn't pin nodejs — the
+# clients/typescript/ tree is auxiliary, not a hard build dep.
+# ──────────────────────────────────────────────────────────────────────
+
+# Install npm dependencies for the TS client.
+ts-install:
+    cd clients/typescript && npm install --no-audit --no-fund
+
+# Type-check the TS sources.
+ts-typecheck:
+    cd clients/typescript && npm run typecheck
+
+# Run the TS test suite (unit + e2e). The e2e test requires
+# ./bin/mosey — run `just build` first.
+ts-test:
+    cd clients/typescript && npx vitest run
+
+# Compile TS sources into clients/typescript/dist/.
+ts-build:
+    cd clients/typescript && npm run build
+
+# Aggregate TS gate: typecheck → test. Use after the Go gate to
+# verify wire-format parity.
+ts-check: ts-typecheck ts-test
+    @echo "✔ just ts-check ok"
+
+# ──────────────────────────────────────────────────────────────────────
 # Documentation
 # ──────────────────────────────────────────────────────────────────────
 

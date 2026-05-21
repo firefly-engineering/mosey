@@ -62,6 +62,17 @@ See [docs/src/design.md](docs/src/design.md) for the wire model,
 protocol IDs, transport backends, multi-client modes, and the
 reattach / replay protocol. The full book lives under `docs/src/`.
 
+## Clients
+
+- **Go**: the `mosey` binary itself is the reference Go client
+  (see `internal/attach/` for the dialer + `cmd/mosey/attach.go`
+  for the CLI wrapper).
+- **TypeScript / browser**:
+  [`clients/typescript/`](clients/typescript/) is the reference
+  WebSocket client — PSK auth, PTY stream, control resize. Works
+  in any modern browser or Node 22+; pairs naturally with
+  `xterm.js` (see `clients/typescript/examples/xterm-demo.html`).
+
 ## Repo
 
 Working in the repo? Start with [AGENTS.md](AGENTS.md) — it covers
