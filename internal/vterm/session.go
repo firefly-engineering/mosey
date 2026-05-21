@@ -1,14 +1,24 @@
 package vterm
 
 import (
+	"fmt"
 	"io"
+	"os"
 	"sync"
 	"sync/atomic"
+
+	"github.com/creack/pty"
 
 	"github.com/firefly-engineering/ship/internal/auth"
 	"github.com/firefly-engineering/ship/internal/streambuf"
 	"github.com/firefly-engineering/ship/internal/transport"
 )
+
+// applyPTYSize updates the PTY winsize via TIOCSWINSZ. Caller
+// should not hold session.mu.
+func applyPTYSize(f *os.File, cols, rows uint32) error {
+	return pty.Setsize(f, &pty.Winsize{Cols: uint16(cols), Rows: uint16(rows)})
+}
 
 // outputRingCapacity bounds the PTY-output replay buffer. ~256 KiB
 // is comfortably above a screenful of `top` and lets a freshly
@@ -33,6 +43,12 @@ type sessionClient struct {
 	stream   transport.Stream
 	identity auth.Identity
 
+	// remote is the auth-layer remote id captured at admit time.
+	// Used by control.go to map an inbound /ship/control/ stream
+	// back to the right sessionClient when recording its
+	// per-client geometry.
+	remote string
+
 	// outCh is the per-client live output channel. The session's
 	// pty-pump fan-outs every byte-chunk onto every client's outCh
 	// using non-blocking send; full → dropped (slow client).
@@ -48,6 +64,13 @@ type sessionClient struct {
 	// secondary attachers even when their identity grants Write.
 	// Mutated under Session.mu.
 	canWrite bool
+
+	// cols / rows are this client's latest reported terminal
+	// geometry. Zero means "no Resize seen from this client yet"
+	// — the session ignores zero values when computing the PTY's
+	// effective min size. Mutated under Session.mu.
+	cols uint32
+	rows uint32
 
 	// kickOnce guards close(done) so eviction stays idempotent.
 	kickOnce sync.Once
@@ -117,6 +140,7 @@ func (s *Session) addClient(stream transport.Stream) *sessionClient {
 		id:       s.nextID,
 		stream:   stream,
 		identity: identity,
+		remote:   stream.RemoteID(),
 		outCh:    make(chan []byte, clientBufferChunks),
 		done:     make(chan struct{}),
 		canWrite: canWrite,
@@ -128,12 +152,97 @@ func (s *Session) addClient(stream transport.Stream) *sessionClient {
 	return c
 }
 
+// clientByRemoteIDLocked returns the most recently-added client
+// whose RemoteID matches remote, or nil if none. Caller must hold
+// s.mu. The "most recent" tiebreaker matters when one peer opens
+// several streams — control messages apply to that peer's latest
+// PTY attach.
+func (s *Session) clientByRemoteIDLocked(remote string) *sessionClient {
+	var latest *sessionClient
+	for _, c := range s.clients {
+		if c.remote != remote {
+			continue
+		}
+		if latest == nil || c.id > latest.id {
+			latest = c
+		}
+	}
+	return latest
+}
+
+// applyResizeForRemote records the supplied cols/rows under the
+// client owning remote, then recomputes the effective PTY size
+// (min across every client with non-zero geometry). Returns the
+// applied PTY size — zero/zero when no clients have reported a
+// geometry yet.
+func (s *Session) applyResizeForRemote(remote string, cols, rows uint32) (cols2, rows2 uint32, err error) {
+	s.mu.Lock()
+	c := s.clientByRemoteIDLocked(remote)
+	if c == nil {
+		s.mu.Unlock()
+		return 0, 0, errResizeNoClient
+	}
+	c.cols = cols
+	c.rows = rows
+	pCols, pRows := s.minGeometryLocked()
+	s.mu.Unlock()
+	if pCols == 0 || pRows == 0 {
+		return 0, 0, nil
+	}
+	if err := applyPTYSize(s.ptyf, pCols, pRows); err != nil {
+		return 0, 0, fmt.Errorf("setsize: %w", err)
+	}
+	return pCols, pRows, nil
+}
+
+// minGeometryLocked computes the minimum cols × rows across every
+// attached client that has reported a non-zero geometry. Caller
+// holds s.mu. Returns 0/0 when no client has reported yet.
+func (s *Session) minGeometryLocked() (cols, rows uint32) {
+	var c, r uint32
+	for _, cl := range s.clients {
+		if cl.cols == 0 || cl.rows == 0 {
+			continue
+		}
+		if c == 0 || cl.cols < c {
+			c = cl.cols
+		}
+		if r == 0 || cl.rows < r {
+			r = cl.rows
+		}
+	}
+	return c, r
+}
+
+// recomputeGeometryAfterRemoveLocked recomputes the PTY size after
+// a client leaves the session — if min just changed (because the
+// constraining client left), the PTY may need to grow. Caller
+// holds s.mu.
+func (s *Session) recomputeGeometryAfterRemoveLocked() {
+	cols, rows := s.minGeometryLocked()
+	if cols == 0 || rows == 0 {
+		return
+	}
+	// Apply asynchronously so we don't hold s.mu across a syscall.
+	go func() {
+		_ = applyPTYSize(s.ptyf, cols, rows)
+	}()
+}
+
+// errResizeNoClient is the sentinel returned by
+// applyResizeForRemote when the resize comes from a remote that
+// has no matching PTY client — typically because the peer opened
+// a control stream without a corresponding /ship/pty/ session
+// (a misbehaving client or a race during teardown).
+var errResizeNoClient = fmt.Errorf("resize: no PTY client for remote")
+
 // removeClient drops a client from the registry and fires its
 // kick if it hadn't already. Safe to call from the handler's
-// defer regardless of who initiated the disconnect.
+// defer regardless of who initiated the disconnect. Triggers a
+// PTY geometry recompute — the leaving client may have been the
+// constraining party for min(cols) / min(rows).
 func (s *Session) removeClient(id int64) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	if c, ok := s.clients[id]; ok {
 		c.kick()
 		delete(s.clients, id)
@@ -141,6 +250,8 @@ func (s *Session) removeClient(id int64) {
 	if s.writerID == id {
 		s.writerID = 0
 	}
+	s.recomputeGeometryAfterRemoveLocked()
+	s.mu.Unlock()
 }
 
 // broadcast fans a PTY byte-chunk out to every live client. Lock

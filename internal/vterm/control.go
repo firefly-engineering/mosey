@@ -7,7 +7,6 @@ import (
 	"os"
 	"syscall"
 
-	"github.com/creack/pty"
 	"google.golang.org/protobuf/encoding/protodelim"
 
 	"github.com/firefly-engineering/ship/internal/api"
@@ -45,7 +44,7 @@ func (s *Session) handleControl(stream transport.Stream) {
 				s.logger.Debug("control resize denied (no Resize cap)", "peer", remote, "role", identity.Label)
 				continue
 			}
-			if err := s.applyResize(payload.Resize); err != nil {
+			if err := s.applyResize(remote, payload.Resize); err != nil {
 				s.logger.Warn("control resize", "peer", remote, "err", err)
 			}
 		case *api.ControlMessage_Signal:
@@ -62,18 +61,28 @@ func (s *Session) handleControl(stream transport.Stream) {
 	}
 }
 
-// applyResize updates the PTY winsize via TIOCSWINSZ. cols/rows = 0
-// is rejected — the kernel allows it but it puts curses apps into
-// a "size unknown" state that's worse than the previous size.
-func (s *Session) applyResize(r *api.Resize) error {
+// applyResize records remote's reported geometry against the
+// corresponding session client and re-derives the PTY's effective
+// size — min(cols, rows) across every client that has reported. A
+// resize of 0×0 from any client is ignored (the kernel accepts it
+// but curses apps go haywire).
+func (s *Session) applyResize(remote string, r *api.Resize) error {
 	cols, rows := r.GetCols(), r.GetRows()
 	if cols == 0 || rows == 0 {
 		return fmt.Errorf("resize ignored: zero dimension (cols=%d rows=%d)", cols, rows)
 	}
-	if err := pty.Setsize(s.ptyf, &pty.Winsize{Rows: uint16(rows), Cols: uint16(cols)}); err != nil {
-		return fmt.Errorf("setsize: %w", err)
+	appliedCols, appliedRows, err := s.applyResizeForRemote(remote, cols, rows)
+	if err != nil {
+		return err
 	}
-	s.logger.Debug("pty resized", "cols", cols, "rows", rows)
+	if appliedCols > 0 && appliedRows > 0 {
+		s.logger.Debug("pty resized",
+			"requested_cols", cols,
+			"requested_rows", rows,
+			"applied_cols", appliedCols,
+			"applied_rows", appliedRows,
+		)
+	}
 	return nil
 }
 
