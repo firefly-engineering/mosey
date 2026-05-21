@@ -1,34 +1,68 @@
-# ship
+# mosey
 
-Run a process under a virtual terminal that's reachable over libp2p,
-then attach to it from another machine.
+> _"I think we should mosey." — Malcolm Reynolds_
+
+`mosey` is a peer-to-peer terminal-sharing primitive. Run a process
+under a virtual terminal that's reachable over libp2p (or HTTP/2),
+then attach to it from another machine — the way you'd `tmux`
+attach, but across hosts, without a central rendezvous server.
+
+Extracted from [shepherd](https://github.com/firefly-engineering/shepherd)
+so its process-attach primitives can stand alone.
 
 ## Status
 
-Pre-alpha. End-to-end PTY bytes work; control protocol (resize,
-signals, state) is the next milestone. Extracted from
-[shepherd](https://github.com/firefly-engineering/shepherd) so its
-process-attach primitives can stand alone.
+Pre-v0.1. The wire model, multi-client modes, control protocol,
+cert auth, and reattach-with-replay are implemented and tested. The
+binary surface and protocol IDs are not yet frozen.
 
-## CLI
+## Install
 
 ```sh
-# host A: run a program inside a vterm reachable over libp2p
-$ vterm --secret=hunter2 -- bash
-listening at /ip4/192.168.1.10/tcp/4001/p2p/12D3KooW...
-
-# host B: attach to it
-$ attach --secret=hunter2 /ip4/192.168.1.10/tcp/4001/p2p/12D3KooW...
-$ # bash prompt from host A — type, exit, etc.
+go install github.com/firefly-engineering/mosey/cmd/mosey@latest
 ```
 
-The shared secret is required on both sides — without it, the libp2p
-private-network protector rejects the handshake before any
-application protocol surfaces. Future versions add a cert-based
-authenticator alongside the PSK one (the interface is already
-abstracted).
+Or, with Nix:
+
+```sh
+nix build github:firefly-engineering/mosey
+./result/bin/mosey help
+```
+
+## Quick demo (PSK)
+
+```sh
+# Host A — launch a shell behind a shareable PTY.
+$ mosey launch --secret=hunter2 -- bash
+mosey launch: listening: /ip4/192.168.1.10/tcp/4001/p2p/12D3KooW...
+
+# Host B — attach. You're now sharing the host-A shell.
+$ mosey attach --secret=hunter2 /ip4/192.168.1.10/tcp/4001/p2p/12D3KooW...
+hostA $
+```
+
+The shared secret is required on both sides. For multi-tenant
+workspaces with revocation, mint per-agent certs from a master
+keypair — see [docs/src/auth.md](docs/src/auth.md).
+
+## Subcommands
+
+```text
+mosey launch  [flags] -- PROGRAM [ARGS...]   run PROGRAM under a shareable PTY
+mosey attach  [flags] ENDPOINT                connect to a running launch
+mosey control SUBCMD [flags] ENDPOINT ...     admin ops (list-clients, promote, kick, demote, set-mode)
+mosey cert    SUBCMD [flags] ...              workspace master + cert minting
+```
+
+Run `mosey SUBCMD -h` for per-subcommand flags.
 
 ## Design
 
-See `docs/design.md` for the wire model, protocol IDs, and the
-roadmap toward a control protocol + workspace federation.
+See [docs/src/design.md](docs/src/design.md) for the wire model,
+protocol IDs, transport backends, multi-client modes, and the
+reattach / replay protocol. The full book lives under `docs/src/`.
+
+## Repo
+
+Working in the repo? Start with [AGENTS.md](AGENTS.md) — it covers
+the jj workflow, layout, and the build / test cadence.

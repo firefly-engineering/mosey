@@ -6,3 +6,6 @@
 # Nix build artifacts
 result
 result-*
+
+# mdbook output (`just docs-build`)
+/docs/book/

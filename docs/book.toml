@@ -1,0 +1,12 @@
+[book]
+title = "mosey"
+authors = ["Firefly Engineering"]
+description = "Peer-to-peer terminal sharing"
+src = "src"
+language = "en"
+
+[output.html]
+default-theme = "navy"
+preferred-dark-theme = "navy"
+git-repository-url = "https://github.com/firefly-engineering/mosey"
+edit-url-template = "https://github.com/firefly-engineering/mosey/edit/main/docs/{path}"
