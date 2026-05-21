@@ -1,0 +1,91 @@
+// ship workspace certificate format. Used by [internal/auth.CertAuth]
+// to prove an agent's identity + capabilities are vouched for by
+// the workspace master keypair. The master signs the
+// [SignedCertContent] payload; the resulting `signature` is what
+// peers verify against the master's public key.
+//
+// Wire shape: a [Cert] is one length-delimited frame on the
+// /ship/auth/ stream when the CertAuth backend is in use. The
+// payload bytes are stable: serialize SignedCertContent with
+// protobuf's deterministic option before signing / verifying.
+syntax = "proto3";
+
+package ship.v1;
+
+option go_package = "github.com/firefly-engineering/ship/internal/api;api";
+
+import "google/protobuf/timestamp.proto";
+
+// Cert is the wire envelope: the signed claim + the master's
+// signature over its serialized form.
+message Cert {
+  bytes content = 1;     // serialized SignedCertContent
+  bytes signature = 2;   // Ed25519 signature(master, content)
+}
+
+// SignedCertContent is the master-attested claim. Everything in
+// here is bound to the signature; verifier deserializes after
+// signature validation.
+message SignedCertContent {
+  // Stable identifier the workspace assigns to this peer. ULIDs
+  // recommended; not enforced at this layer.
+  string agent_id = 1;
+
+  // Ed25519 public key of the agent. The agent proves ownership
+  // by signing the auth handshake transcript with the matching
+  // private key — see CertAuth for that flow.
+  bytes peer_pubkey = 2;
+
+  // Free-form label for logs / UI ("alice@host", "ci-runner"). Not
+  // load-bearing for authorization.
+  string label = 3;
+
+  // Capabilities granted to the cert holder. Mirrors
+  // auth.Capabilities; serialized as a bitfield for compactness.
+  // Bits: 1=Owner, 2=Write, 4=Resize. Owner implies Write+Resize
+  // in the higher-level Capabilities consumer.
+  uint32 caps_bits = 4;
+
+  // Issuance / expiry times. The verifier rejects a cert that
+  // hasn't yet started (not_before in the future) or has expired
+  // (not_after in the past).
+  google.protobuf.Timestamp not_before = 5;
+  google.protobuf.Timestamp not_after = 6;
+
+  // Serial number distinguishes individual cert issuances even
+  // when (agent_id, peer_pubkey) repeat. Revocation lists target
+  // serials so a single compromise doesn't taint the agent's
+  // identity forever.
+  string serial = 7;
+
+  // Workspace identifier. Verifier confirms it matches what it
+  // expects; protects against accidentally accepting a cert from
+  // another workspace that happens to share a master key (which
+  // shouldn't happen but defense-in-depth).
+  string workspace_id = 8;
+}
+
+// CertHandshakeMessage is the wire envelope on /ship/auth/ when
+// CertAuth is in use. The flow is symmetric: each side sends a
+// CertHello with its cert, then a SignedNonce as proof of private-
+// key control over the cert's declared peer_pubkey.
+message CertHandshakeMessage {
+  oneof payload {
+    CertHello hello = 1;
+    SignedNonce proof = 2;
+  }
+}
+
+// CertHello carries the sender's cert + a fresh nonce for the
+// peer to sign as proof-of-control.
+message CertHello {
+  Cert cert = 1;
+  bytes nonce = 2;
+}
+
+// SignedNonce is the sender's Ed25519 signature over
+// "ship-cert-v1" || peer_nonce. The peer verifies against the
+// sender's cert.peer_pubkey.
+message SignedNonce {
+  bytes signature = 1;
+}
