@@ -1,0 +1,51 @@
+// ship's control protocol — out-of-band messages between a vterm
+// and an attached client. Carried on the libp2p stream
+// `/ship/control/1.0.0` as length-delimited [ControlMessage]
+// envelopes. Both sides may write; v1 only attach → vterm is used
+// (Resize, Signal). v2 will add vterm → attach state events.
+syntax = "proto3";
+
+package ship.v1;
+
+option go_package = "github.com/firefly-engineering/ship/internal/api;api";
+
+// ControlMessage is the envelope carried on /ship/control/. Each
+// frame is length-delimited (varint length prefix + serialized
+// proto) so a single stream multiplexes typed messages without a
+// separate framing layer.
+//
+// Adding a new payload variant is a non-breaking change as long as
+// the new field uses a fresh tag number. Old peers ignore unknown
+// payloads; new peers should fall back gracefully when they receive
+// an envelope whose payload they don't understand (e.g. log and
+// continue).
+message ControlMessage {
+  oneof payload {
+    Resize resize = 1;
+    Signal signal = 2;
+  }
+}
+
+// Resize requests that the remote PTY be set to the given size
+// (TIOCSWINSZ-equivalent). Attach sends one on connect and again
+// whenever its local terminal SIGWINCH fires.
+message Resize {
+  uint32 cols = 1;
+  uint32 rows = 2;
+}
+
+// Signal forwards a process signal to the vterm's child process.
+// Maps to a small, deliberately constrained set so v1 isn't a
+// signal-injection vector; the wider POSIX set can be reconsidered
+// once the authn story matures.
+message Signal {
+  enum Kind {
+    KIND_UNSPECIFIED = 0;
+    KIND_HUP = 1;
+    KIND_INT = 2;
+    KIND_TERM = 3;
+    KIND_USR1 = 4;
+    KIND_USR2 = 5;
+  }
+  Kind kind = 1;
+}
