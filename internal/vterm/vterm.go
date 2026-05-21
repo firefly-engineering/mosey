@@ -72,7 +72,14 @@ func Run(ctx context.Context, opts Options, argv []string) error {
 	// the whole tree on teardown rather than orphan grandchildren.
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 
-	ptmx, err := pty.Start(cmd)
+	// Default the PTY to 80x24. Without this, ncurses-style TUIs
+	// (btop, htop) read ws_col=0 / ws_row=0 from the freshly-opened
+	// PTY and bail before drawing a frame. Attach overrides this
+	// with a Resize control message at connect time, but the child
+	// might already have queried the size by then. 80x24 is the
+	// historical default and looks fine for most apps until the
+	// real size lands.
+	ptmx, err := pty.StartWithSize(cmd, &pty.Winsize{Cols: 80, Rows: 24})
 	if err != nil {
 		return fmt.Errorf("ship/vterm: pty.Start: %w", err)
 	}
@@ -85,7 +92,9 @@ func Run(ctx context.Context, opts Options, argv []string) error {
 	}
 
 	opts.Host.SetStreamHandler(api.ProtoPTY, svc.handlePTY)
+	opts.Host.SetStreamHandler(api.ProtoControl, svc.handleControl)
 	defer opts.Host.RemoveStreamHandler(api.ProtoPTY)
+	defer opts.Host.RemoveStreamHandler(api.ProtoControl)
 
 	logger.Info("vterm running",
 		"pid", cmd.Process.Pid,
