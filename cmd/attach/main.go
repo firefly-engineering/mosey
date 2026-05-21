@@ -1,12 +1,13 @@
-// Command attach connects to a libp2p-reachable vterm and bridges
-// its PTY stream to the local terminal.
+// Command attach connects to a ship vterm and bridges its PTY
+// stream to the local terminal.
 //
 // Usage:
 //
-//	attach --secret=SECRET ADDR
+//	attach --secret=SECRET ENDPOINT
 //
-// ADDR is the multiaddr printed by `vterm` at startup, e.g.
-// `/ip4/192.168.1.10/tcp/4001/p2p/12D3KooW...`.
+// ENDPOINT is the address printed by `vterm` at startup
+// (e.g. "libp2p:/ip4/192.168.1.10/tcp/4001/p2p/12D3KooW..." or a
+// bare multiaddr).
 package main
 
 import (
@@ -20,7 +21,6 @@ import (
 	"syscall"
 
 	"github.com/libp2p/go-libp2p/core/peer"
-	"github.com/multiformats/go-multiaddr"
 
 	"github.com/firefly-engineering/ship/internal/attach"
 	"github.com/firefly-engineering/ship/internal/auth"
@@ -50,17 +50,12 @@ func run(args []string, stderr *os.File) int {
 		return 2
 	}
 	if fs.NArg() != 1 {
-		fmt.Fprintln(stderr, "attach: expected exactly one positional argument (target multiaddr)")
+		fmt.Fprintln(stderr, "attach: expected exactly one positional argument (endpoint)")
 		return 2
 	}
+	target := fs.Arg(0)
 
 	logger := newLogger(stderr, *logLevel)
-
-	target, err := parseTarget(fs.Arg(0))
-	if err != nil {
-		fmt.Fprintln(stderr, "attach:", err)
-		return 2
-	}
 
 	psk, err := auth.NewPSKAuth(*secret)
 	if err != nil {
@@ -84,30 +79,14 @@ func run(args []string, stderr *os.File) int {
 	defer func() { _ = backend.Close() }()
 
 	if err := attach.Run(ctx, attach.Options{
-		Host:   backend.Host(),
-		Target: target,
-		Logger: logger,
+		Transport: backend,
+		Target:    target,
+		Logger:    logger,
 	}); err != nil {
 		fmt.Fprintln(stderr, "attach:", err)
 		return 1
 	}
 	return 0
-}
-
-// parseTarget converts the user's multiaddr argument into a
-// [peer.AddrInfo]. The argument must include a /p2p/<peer-id>
-// component — without the peer id we can't identify the dial
-// target.
-func parseTarget(s string) (peer.AddrInfo, error) {
-	ma, err := multiaddr.NewMultiaddr(s)
-	if err != nil {
-		return peer.AddrInfo{}, fmt.Errorf("parse multiaddr: %w", err)
-	}
-	info, err := peer.AddrInfoFromP2pAddr(ma)
-	if err != nil {
-		return peer.AddrInfo{}, fmt.Errorf("multiaddr needs /p2p/<peer-id> suffix: %w", err)
-	}
-	return *info, nil
 }
 
 func newLogger(out *os.File, level string) *slog.Logger {

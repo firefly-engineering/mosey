@@ -85,15 +85,13 @@ func run(args []string, stderr *os.File) int {
 	}
 	defer func() { _ = backend.Close() }()
 
-	// Print the dialable multiaddrs so the user can paste one into
-	// `attach`. Use p2p-suffixed form so the consumer doesn't need
-	// to know the peer id separately.
-	h := backend.Host()
-	for _, a := range h.Addrs() {
-		fmt.Fprintf(stderr, "vterm listening: %s/p2p/%s\n", a, h.ID())
+	// Print the dialable endpoints so the user can paste one into
+	// `attach`.
+	for _, ep := range backend.Endpoints() {
+		fmt.Fprintf(stderr, "vterm listening: %s\n", ep)
 	}
 
-	if err := vterm.Run(ctx, vterm.Options{Host: h, Logger: logger}, argv); err != nil {
+	if err := vterm.Run(ctx, vterm.Options{Transport: backend, Logger: logger}, argv); err != nil {
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) {
 			return exitErr.ExitCode()

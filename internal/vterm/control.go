@@ -8,29 +8,23 @@ import (
 	"syscall"
 
 	"github.com/creack/pty"
-	"github.com/libp2p/go-libp2p/core/network"
 	"google.golang.org/protobuf/encoding/protodelim"
 
 	"github.com/firefly-engineering/ship/internal/api"
 	"github.com/firefly-engineering/ship/internal/transport"
 )
 
-// handleControl is the libp2p stream handler for [api.ProtoControl].
-// Reads length-delimited [api.ControlMessage] frames from the stream
-// and dispatches each to the live PTY / child process. Returns when
-// the peer closes its write side, the stream errors, or the service
-// is torn down. On clean shutdown the stream is Closed (not Reset)
-// so the peer sees EOF rather than a transport-error report.
-func (s *Service) handleControl(stream network.Stream) {
-	remote := stream.Conn().RemotePeer()
+// handleControl is the transport handler for [api.ProtoControl].
+// Reads length-delimited [api.ControlMessage] frames and dispatches
+// each to the live PTY / child process. Returns when the peer
+// closes its write side, the stream errors, or the service is torn
+// down. Always Closes the stream — backends decide whether that
+// translates to a clean half-close or a forceful tear-down.
+func (s *Service) handleControl(stream transport.Stream) {
+	remote := stream.RemoteID()
 	s.logger.Info("control opened", "peer", remote)
-	cleanShutdown := true
 	defer func() {
-		if cleanShutdown {
-			_ = stream.Close()
-		} else {
-			_ = stream.Reset()
-		}
+		_ = stream.Close()
 		s.logger.Info("control closed", "peer", remote)
 	}()
 
@@ -39,7 +33,6 @@ func (s *Service) handleControl(stream network.Stream) {
 		var msg api.ControlMessage
 		if err := protodelim.UnmarshalFrom(reader, &msg); err != nil {
 			if !transport.IsExpectedShutdown(err) {
-				cleanShutdown = false
 				s.logger.Warn("control read", "peer", remote, "err", err)
 			}
 			return

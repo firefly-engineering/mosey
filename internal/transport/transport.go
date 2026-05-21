@@ -24,6 +24,13 @@ type Stream interface {
 	// a clean EOF on its read. Optional: backends that can't model
 	// half-close (raw TCP without framing) return [ErrUnsupported].
 	CloseWrite() error
+
+	// RemoteID returns a backend-specific identifier for the remote
+	// peer (libp2p peer id, TLS subject CN, etc.). Used for log
+	// tagging; not for authentication. May be empty when the
+	// backend can't attribute a stable identity (e.g. anonymous
+	// HTTP connections).
+	RemoteID() string
 }
 
 // ErrUnsupported is returned by optional [Stream] methods when the

@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/libp2p/go-libp2p/core/peer"
-	"github.com/libp2p/go-libp2p/core/protocol"
 	"google.golang.org/protobuf/encoding/protodelim"
 
 	"github.com/firefly-engineering/ship/internal/api"
@@ -42,16 +41,12 @@ func TestVterm_ResizeAppliesViaControlStream(t *testing.T) {
 	}
 	defer func() { _ = vtermHost.Close() }()
 
-	// On WINCH, print "WINCH:<rows>x<cols>". The first stty before
-	// the trap loop prints the initial size; useful for verifying
-	// the default (80x24) and the post-Resize size.
 	script := "stty size; trap 'stty size' WINCH; while true; do sleep 0.1; done"
 	vtermDone := make(chan error, 1)
 	go func() {
-		vtermDone <- vterm.Run(ctx, vterm.Options{Host: vtermHost.Host()}, []string{"bash", "-c", script})
+		vtermDone <- vterm.Run(ctx, vterm.Options{Transport: vtermHost}, []string{"bash", "-c", script})
 	}()
 
-	// Let vterm.Run register handlers + spawn the child.
 	time.Sleep(300 * time.Millisecond)
 
 	attachHost, err := libp2pbackend.New(ctx, libp2pbackend.Options{
@@ -63,19 +58,18 @@ func TestVterm_ResizeAppliesViaControlStream(t *testing.T) {
 	}
 	defer func() { _ = attachHost.Close() }()
 
-	target := peer.AddrInfo{ID: vtermHost.Host().ID(), Addrs: vtermHost.Host().Addrs()}
-	if err := attachHost.Host().Connect(ctx, target); err != nil {
-		t.Fatalf("connect: %v", err)
+	endpoints := vtermHost.Endpoints()
+	if len(endpoints) == 0 {
+		t.Fatal("vterm host published no endpoints")
 	}
+	target := endpoints[0]
 
-	// Open the PTY stream first so we can read output continuously.
-	ptyStream, err := attachHost.Host().NewStream(ctx, target.ID, api.ProtoPTY)
+	ptyStream, err := attachHost.Dial(ctx, target, api.ProtoPTY)
 	if err != nil {
 		t.Fatalf("open pty stream: %v", err)
 	}
-	defer func() { _ = ptyStream.Reset() }()
+	defer func() { _ = ptyStream.Close() }()
 
-	// Read PTY output into a syncBuffer (defined in integration_test.go).
 	output := &syncBuffer{}
 	go func() {
 		buf := make([]byte, 4096)
@@ -90,18 +84,15 @@ func TestVterm_ResizeAppliesViaControlStream(t *testing.T) {
 		}
 	}()
 
-	// Wait for the initial stty output to appear. With our 80x24
-	// default that's "24 80".
 	if !waitForString(output, "24 80", 5*time.Second) {
 		t.Fatalf("initial stty size never appeared; got: %q", output.String())
 	}
 
-	// Open the control stream and send a Resize to 40x120.
-	ctrl, err := attachHost.Host().NewStream(ctx, target.ID, protocol.ID(api.ProtoControl))
+	ctrl, err := attachHost.Dial(ctx, target, api.ProtoControl)
 	if err != nil {
 		t.Fatalf("open control stream: %v", err)
 	}
-	defer func() { _ = ctrl.Reset() }()
+	defer func() { _ = ctrl.Close() }()
 
 	resize := &api.ControlMessage{
 		Payload: &api.ControlMessage_Resize{
@@ -112,14 +103,11 @@ func TestVterm_ResizeAppliesViaControlStream(t *testing.T) {
 		t.Fatalf("send resize: %v", err)
 	}
 
-	// stty size after WINCH prints "40 120".
 	if !waitForString(output, "40 120", 5*time.Second) {
 		t.Fatalf("post-resize stty never appeared; got: %q", output.String())
 	}
 }
 
-// waitForString polls buf until it contains needle, returning true
-// on hit and false on timeout.
 func waitForString(buf *syncBuffer, needle string, timeout time.Duration) bool {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {

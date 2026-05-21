@@ -1,11 +1,11 @@
 // Package attach dials a ship vterm peer and bridges its PTY stream
 // to the local terminal.
 //
-// The attach side is the simpler half of ship: open a libp2p stream,
-// copy bytes both ways, restore the local TTY on exit. Terminal raw
-// mode is on so keystrokes flow through unmolested; the local
-// process's signal-handling (Ctrl-C, etc.) hands off to the remote
-// PTY, where the child program decides what to do with them.
+// Stream lifecycle: open /ship/pty/ via the transport, copy bytes
+// both ways, restore the local TTY on exit. Terminal raw mode is
+// on so keystrokes flow through unmolested; the local process's
+// signal-handling (Ctrl-C, etc.) hands off to the remote PTY,
+// where the child program decides what to do with them.
 package attach
 
 import (
@@ -16,8 +16,6 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/libp2p/go-libp2p/core/host"
-	"github.com/libp2p/go-libp2p/core/peer"
 	"golang.org/x/term"
 
 	"github.com/firefly-engineering/ship/internal/api"
@@ -26,12 +24,13 @@ import (
 
 // Options configures [Run].
 type Options struct {
-	// Host is the libp2p host the client dials from. Required.
-	Host host.Host
+	// Transport is the wire backend used to dial Target. Required.
+	Transport transport.Transport
 
-	// Target identifies the vterm peer. Must include at least one
-	// dialable multiaddr (the host's listen addrs). Required.
-	Target peer.AddrInfo
+	// Target is the endpoint (URI form) of the vterm to attach to.
+	// Format depends on the transport (libp2p multiaddr,
+	// https://… URL, etc.). Required.
+	Target string
 
 	// Logger is structured-log sink. Zero means discard.
 	Logger *slog.Logger
@@ -47,11 +46,11 @@ type Options struct {
 // either side closes the stream or ctx is cancelled. Returns nil on
 // a clean disconnect from the remote, otherwise the wrapped error.
 func Run(ctx context.Context, opts Options) error {
-	if opts.Host == nil {
-		return errors.New("ship/attach: Options.Host required")
+	if opts.Transport == nil {
+		return errors.New("ship/attach: Options.Transport required")
 	}
-	if len(opts.Target.Addrs) == 0 {
-		return errors.New("ship/attach: Options.Target needs at least one multiaddr")
+	if opts.Target == "" {
+		return errors.New("ship/attach: Options.Target required")
 	}
 	logger := opts.Logger
 	if logger == nil {
@@ -66,17 +65,13 @@ func Run(ctx context.Context, opts Options) error {
 		stdout = os.Stdout
 	}
 
-	if err := opts.Host.Connect(ctx, opts.Target); err != nil {
-		return fmt.Errorf("ship/attach: connect %s: %w", opts.Target.ID, err)
-	}
-
 	// Open the control stream first so the remote has the right
 	// PTY size before any bytes flow on /pty/. Without this, full-
 	// screen TUIs (btop, htop, ncurses apps) read ws_col=0 and
 	// bail. Older vterms that don't advertise the control protocol
 	// fall through with control==nil — we still attach, just
 	// without size / signal forwarding.
-	control, err := newControlClient(ctx, opts.Host, opts.Target, logger)
+	control, err := newControlClient(ctx, opts.Transport, opts.Target, logger)
 	if err != nil {
 		return err
 	}
@@ -90,17 +85,14 @@ func Run(ctx context.Context, opts Options) error {
 		go watchSIGWINCH(ctx, stdin, control, logger)
 	}
 
-	stream, err := opts.Host.NewStream(ctx, opts.Target.ID, api.ProtoPTY)
+	stream, err := opts.Transport.Dial(ctx, opts.Target, api.ProtoPTY)
 	if err != nil {
 		return fmt.Errorf("ship/attach: open %s: %w", api.ProtoPTY, err)
 	}
-	defer func() { _ = stream.Reset() }()
+	defer func() { _ = stream.Close() }()
 
-	logger.Info("attached", "peer", opts.Target.ID, "protocol", api.ProtoPTY)
+	logger.Info("attached", "target", opts.Target, "protocol", api.ProtoPTY)
 
-	// Put local stdin into raw mode so keystrokes pass through to
-	// the remote PTY untouched. Only do this if stdin is an actual
-	// TTY — tests / piped input skip it.
 	if f, ok := stdin.(*os.File); ok && term.IsTerminal(int(f.Fd())) {
 		state, err := term.MakeRaw(int(f.Fd()))
 		if err != nil {

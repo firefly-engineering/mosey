@@ -49,7 +49,7 @@ func TestVterm_AttachRoundTrip(t *testing.T) {
 	// so anything attach sends should reappear on attach's stdout.
 	vtermDone := make(chan error, 1)
 	go func() {
-		vtermDone <- vterm.Run(ctx, vterm.Options{Host: vtermHost.Host()}, []string{"cat"})
+		vtermDone <- vterm.Run(ctx, vterm.Options{Transport: vtermHost}, []string{"cat"})
 	}()
 
 	// Wait a beat for vterm.Run to register the stream handler.
@@ -68,14 +68,14 @@ func TestVterm_AttachRoundTrip(t *testing.T) {
 	}
 	defer func() { _ = attachHost.Close() }()
 
-	target := peer.AddrInfo{
-		ID:    vtermHost.Host().ID(),
-		Addrs: vtermHost.Host().Addrs(),
+	// Vterm endpoints are in URI form; pick the first dialable one
+	// for the attach side.
+	endpoints := vtermHost.Endpoints()
+	if len(endpoints) == 0 {
+		t.Fatal("vterm host published no endpoints")
 	}
+	target := endpoints[0]
 
-	// stdinR is what attach reads (we write bytes here to simulate
-	// the user typing); stdoutW is where attach writes (we read
-	// back to assert what the vterm echoed).
 	stdinR, stdinW := io.Pipe()
 	defer stdinR.Close()
 	defer stdinW.Close()
@@ -85,10 +85,10 @@ func TestVterm_AttachRoundTrip(t *testing.T) {
 	attachDone := make(chan error, 1)
 	go func() {
 		attachDone <- attach.Run(ctx, attach.Options{
-			Host:   attachHost.Host(),
-			Target: target,
-			Stdin:  stdinR,
-			Stdout: stdout,
+			Transport: attachHost,
+			Target:    target,
+			Stdin:     stdinR,
+			Stdout:    stdout,
 		})
 	}()
 

@@ -11,13 +11,12 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/libp2p/go-libp2p/core/host"
-	"github.com/libp2p/go-libp2p/core/peer"
 	"golang.org/x/sys/unix"
 	"golang.org/x/term"
 	"google.golang.org/protobuf/encoding/protodelim"
 
 	"github.com/firefly-engineering/ship/internal/api"
+	"github.com/firefly-engineering/ship/internal/transport"
 )
 
 // controlClient wraps the [api.ProtoControl] stream and exposes
@@ -31,19 +30,19 @@ type controlClient struct {
 	closed bool
 }
 
-// newControlClient opens /ship/control/ on h against target and
+// newControlClient opens /ship/control/ on tr against target and
 // returns a controlClient. Returns nil + nil error when control
 // is unavailable on the remote (e.g. a v0 vterm) — the caller
 // should still attach the PTY in that case, just without size /
 // signal forwarding.
-func newControlClient(ctx context.Context, h host.Host, target peer.AddrInfo, logger *slog.Logger) (*controlClient, error) {
-	stream, err := h.NewStream(ctx, target.ID, api.ProtoControl)
+func newControlClient(ctx context.Context, tr transport.Transport, target string, logger *slog.Logger) (*controlClient, error) {
+	stream, err := tr.Dial(ctx, target, api.ProtoControl)
 	if err != nil {
-		// libp2p reports "protocol not supported" when the remote
+		// Backends report "protocol not supported" when the remote
 		// hasn't registered the handler. Treat that as graceful
 		// degradation: we can still run the PTY-only path.
 		if isProtocolNotSupported(err) {
-			logger.Info("ui: control protocol not advertised by peer; running without resize / signal forwarding")
+			logger.Info("control protocol not advertised by peer; running without resize / signal forwarding")
 			return nil, nil
 		}
 		return nil, fmt.Errorf("ship/attach: open %s: %w", api.ProtoControl, err)

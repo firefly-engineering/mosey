@@ -205,11 +205,12 @@ func (b *Backend) Dial(ctx context.Context, endpoint, proto string) (transport.S
 func (b *Backend) Close() error { return b.host.Close() }
 
 // streamAdapter wraps a libp2p [network.Stream] to satisfy
-// [transport.Stream]. The only extra is CloseWrite, which libp2p
-// implements natively.
+// [transport.Stream]. CloseWrite is native libp2p; RemoteID
+// returns the remote peer's libp2p multihash for log tagging.
 type streamAdapter struct{ network.Stream }
 
 func (s *streamAdapter) CloseWrite() error { return s.Stream.CloseWrite() }
+func (s *streamAdapter) RemoteID() string  { return s.Stream.Conn().RemotePeer().String() }
 
 // parseEndpoint accepts a "libp2p:..." URL or a bare multiaddr and
 // returns the dial target.
