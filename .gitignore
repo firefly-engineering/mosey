@@ -1,5 +1,8 @@
 /bin/
 *.test
 *.out
-.envrc
 .direnv/
+
+# Nix build artifacts
+result
+result-*
