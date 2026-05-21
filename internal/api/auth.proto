@@ -32,9 +32,19 @@ message AuthMessage {
 }
 
 // ClientHello is the first message: the dialer picks 32 random
-// bytes and sends them as a challenge.
+// bytes and sends them as a challenge. `label` is an unauthenticated
+// hint telling the server which configured secret/role to verify
+// against — useful when the server has multiple secrets (owner +
+// reader). Empty label means "owner" (the historical single-secret
+// default).
+//
+// The label is just a hint: the server uses it to look up the
+// right key, then runs the standard MAC verification. A client that
+// lies about the label can't produce a valid MAC against a
+// different key, so the handshake fails as it should.
 message ClientHello {
   bytes nonce = 1;
+  string label = 2;
 }
 
 // ServerProof is the listener's response: its own 32-byte nonce

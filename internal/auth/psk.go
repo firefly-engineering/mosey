@@ -17,8 +17,8 @@ import (
 	"github.com/firefly-engineering/ship/internal/api"
 )
 
-// HKDF info parameter used when deriving the shared HMAC key from
-// the user-supplied secret. Stable across versions; changing it
+// HKDF info parameter used when deriving the per-entry HMAC key
+// from the plaintext secret. Stable across versions; changing it
 // would break compat between peers that share the same plaintext
 // secret but disagree about derivation.
 const pskInfo = "ship.v1.psk"
@@ -31,36 +31,99 @@ const (
 	macLabelClient = "ship-auth-v1:C"
 )
 
+// LabelOwner is the conventional label for the all-powers secret
+// configured via [NewPSKAuth] / the --secret CLI flag. The server
+// treats an empty [api.ClientHello.Label] as a request for this
+// label, preserving the historical single-secret experience.
+const LabelOwner = "owner"
+
+// LabelReader is the conventional label for an observer-only
+// secret configured alongside the owner secret via
+// [NewMultiPSKAuth] / the --reader-secret CLI flag. Holders of
+// the reader secret get an [Identity] with empty Capabilities —
+// they can attach but not write to or resize the PTY.
+const LabelReader = "reader"
+
 // nonceSize is the per-direction challenge length. 32 bytes is well
 // above the standard 16 — cheap insurance.
 const nonceSize = 32
 
-// NewPSKAuth derives a 32-byte HMAC key from the supplied plaintext
-// secret via HKDF-SHA256 (salt = nil, info = "ship.v1.psk"). The
-// resulting authenticator treats every successful handshake as
-// Owner — this is the single-secret backwards-compatible shape.
-// Use [NewMultiPSKAuth] when you want named roles (owner / reader).
-func NewPSKAuth(secret string) (*PSKAuth, error) {
-	if secret == "" {
-		return nil, errors.New("ship/auth: PSK secret must be non-empty")
-	}
-	key, err := derivePSKKey(secret)
-	if err != nil {
-		return nil, err
-	}
-	return &PSKAuth{
-		key: key,
-		identity: Identity{
-			Label: "owner",
-			Caps:  Capabilities{Owner: true, Write: true, Resize: true},
-		},
-	}, nil
+// NamedSecret pairs a plaintext shared secret with the
+// [Capabilities] holders of that secret are granted on successful
+// handshake. Labels must be unique within a single [PSKAuth].
+type NamedSecret struct {
+	Label  string
+	Secret string
+	Caps   Capabilities
 }
 
-// PSKAuth is an [Authenticator] backed by a workspace-wide
-// pre-shared key. Both peers must derive the same key from the
-// same plaintext for the handshake to complete.
+// NewPSKAuth derives a 32-byte HMAC key from the supplied plaintext
+// secret and returns an authenticator that treats every successful
+// handshake as Owner. Equivalent to NewMultiPSKAuth with one entry
+// labeled [LabelOwner].
+func NewPSKAuth(secret string) (*PSKAuth, error) {
+	return NewMultiPSKAuth([]NamedSecret{{
+		Label:  LabelOwner,
+		Secret: secret,
+		Caps:   Capabilities{Owner: true, Write: true, Resize: true},
+	}})
+}
+
+// NewMultiPSKAuth builds a PSKAuth with one entry per supplied
+// NamedSecret. Each entry's secret derives its own HMAC key; on the
+// server side, the client's [api.ClientHello.Label] picks which
+// entry the server verifies against (empty label maps to
+// [LabelOwner] when present). On the client side, the FIRST entry
+// is sent as the client's label / used for MAC generation —
+// typical usage is one entry per client (named with its role).
+func NewMultiPSKAuth(entries []NamedSecret) (*PSKAuth, error) {
+	if len(entries) == 0 {
+		return nil, errors.New("ship/auth: at least one secret entry required")
+	}
+	out := &PSKAuth{
+		byLabel: make(map[string]entry, len(entries)),
+		order:   make([]string, 0, len(entries)),
+	}
+	for _, ns := range entries {
+		if ns.Label == "" {
+			return nil, errors.New("ship/auth: secret entry needs a non-empty Label")
+		}
+		if ns.Secret == "" {
+			return nil, fmt.Errorf("ship/auth: secret entry %q has empty Secret", ns.Label)
+		}
+		if _, dup := out.byLabel[ns.Label]; dup {
+			return nil, fmt.Errorf("ship/auth: duplicate label %q", ns.Label)
+		}
+		key, err := derivePSKKey(ns.Secret)
+		if err != nil {
+			return nil, err
+		}
+		out.byLabel[ns.Label] = entry{
+			label: ns.Label,
+			key:   key,
+			identity: Identity{
+				Label: ns.Label,
+				Caps:  ns.Caps,
+			},
+		}
+		out.order = append(out.order, ns.Label)
+	}
+	return out, nil
+}
+
+// PSKAuth is an [Authenticator] backed by one or more named PSKs.
+// Server-side: the client's label hint picks the entry the server
+// verifies against; on match, the entry's Identity is returned.
+// Client-side: the first registered entry is used for the
+// handshake; that entry's label is sent as the [api.ClientHello]
+// hint.
 type PSKAuth struct {
+	byLabel map[string]entry
+	order   []string // registration order; client uses order[0]
+}
+
+type entry struct {
+	label    string
 	key      [32]byte
 	identity Identity
 }
@@ -68,10 +131,17 @@ type PSKAuth struct {
 // Name implements [Authenticator].
 func (a *PSKAuth) Name() string { return "psk" }
 
-// ClientHandshake implements [Authenticator]. Sends ClientHello,
-// validates the ServerProof, sends ClientProof. Returns the
-// authenticator's local Identity on success.
+// ClientHandshake implements [Authenticator]. Uses the first
+// registered entry; sends its label in ClientHello, computes its
+// MAC over the configured key. Single-entry PSKAuths
+// (single-secret use) produce the historical "everyone is owner"
+// shape.
 func (a *PSKAuth) ClientHandshake(_ context.Context, stream io.ReadWriteCloser) (Identity, error) {
+	if len(a.order) == 0 {
+		return Identity{}, errors.New("ship/auth(psk): no entries configured")
+	}
+	clientEntry := a.byLabel[a.order[0]]
+
 	nonceC, err := randomNonce()
 	if err != nil {
 		return Identity{}, fmt.Errorf("ship/auth(psk): nonce: %w", err)
@@ -79,7 +149,10 @@ func (a *PSKAuth) ClientHandshake(_ context.Context, stream io.ReadWriteCloser) 
 
 	if err := writeAuth(stream, &api.AuthMessage{
 		Kind: &api.AuthMessage_ClientHello{
-			ClientHello: &api.ClientHello{Nonce: nonceC[:]},
+			ClientHello: &api.ClientHello{
+				Nonce: nonceC[:],
+				Label: clientEntry.label,
+			},
 		},
 	}); err != nil {
 		return Identity{}, fmt.Errorf("ship/auth(psk): send client_hello: %w", err)
@@ -97,12 +170,12 @@ func (a *PSKAuth) ClientHandshake(_ context.Context, stream io.ReadWriteCloser) 
 	if len(nonceS) != nonceSize {
 		return Identity{}, fmt.Errorf("ship/auth(psk): %w: server nonce length %d", ErrUnauthorized, len(nonceS))
 	}
-	wantServerMac := mac(a.key[:], macLabelServer, nonceC[:], nonceS)
+	wantServerMac := mac(clientEntry.key[:], macLabelServer, nonceC[:], nonceS)
 	if subtle.ConstantTimeCompare(sp.GetMac(), wantServerMac) != 1 {
 		return Identity{}, fmt.Errorf("ship/auth(psk): %w: server mac mismatch", ErrUnauthorized)
 	}
 
-	clientMac := mac(a.key[:], macLabelClient, nonceS, nonceC[:])
+	clientMac := mac(clientEntry.key[:], macLabelClient, nonceS, nonceC[:])
 	if err := writeAuth(stream, &api.AuthMessage{
 		Kind: &api.AuthMessage_ClientProof{
 			ClientProof: &api.ClientProof{Mac: clientMac},
@@ -110,13 +183,13 @@ func (a *PSKAuth) ClientHandshake(_ context.Context, stream io.ReadWriteCloser) 
 	}); err != nil {
 		return Identity{}, fmt.Errorf("ship/auth(psk): send client_proof: %w", err)
 	}
-	return a.identity, nil
+	return clientEntry.identity, nil
 }
 
-// ServerHandshake implements [Authenticator]. Mirror of the client
-// path: read ClientHello, send ServerProof, validate ClientProof.
-// Returns the local Identity (single-secret PSK uses one role for
-// everyone) on success.
+// ServerHandshake implements [Authenticator]. Reads ClientHello,
+// looks up the label-hinted entry (empty label maps to "owner"),
+// computes and sends the matching ServerProof, then validates the
+// ClientProof. On success returns the entry's Identity.
 func (a *PSKAuth) ServerHandshake(_ context.Context, stream io.ReadWriteCloser) (Identity, error) {
 	var hello api.AuthMessage
 	if err := readAuth(stream, &hello); err != nil {
@@ -131,11 +204,22 @@ func (a *PSKAuth) ServerHandshake(_ context.Context, stream io.ReadWriteCloser) 
 		return Identity{}, fmt.Errorf("ship/auth(psk): %w: client nonce length %d", ErrUnauthorized, len(nonceC))
 	}
 
+	label := ch.GetLabel()
+	if label == "" {
+		label = LabelOwner
+	}
+	srvEntry, ok := a.byLabel[label]
+	if !ok {
+		// Unknown label. Don't leak which labels exist — return the
+		// standard handshake-failure surface.
+		return Identity{}, fmt.Errorf("ship/auth(psk): %w: unknown label", ErrUnauthorized)
+	}
+
 	nonceS, err := randomNonce()
 	if err != nil {
 		return Identity{}, fmt.Errorf("ship/auth(psk): nonce: %w", err)
 	}
-	serverMac := mac(a.key[:], macLabelServer, nonceC, nonceS[:])
+	serverMac := mac(srvEntry.key[:], macLabelServer, nonceC, nonceS[:])
 	if err := writeAuth(stream, &api.AuthMessage{
 		Kind: &api.AuthMessage_ServerProof{
 			ServerProof: &api.ServerProof{Nonce: nonceS[:], Mac: serverMac},
@@ -152,15 +236,22 @@ func (a *PSKAuth) ServerHandshake(_ context.Context, stream io.ReadWriteCloser) 
 	if cp == nil {
 		return Identity{}, fmt.Errorf("ship/auth(psk): %w: client sent %T, expected ClientProof", ErrUnauthorized, finish.GetKind())
 	}
-	wantClientMac := mac(a.key[:], macLabelClient, nonceS[:], nonceC)
+	wantClientMac := mac(srvEntry.key[:], macLabelClient, nonceS[:], nonceC)
 	if subtle.ConstantTimeCompare(cp.GetMac(), wantClientMac) != 1 {
 		return Identity{}, fmt.Errorf("ship/auth(psk): %w: client mac mismatch", ErrUnauthorized)
 	}
-	return a.identity, nil
+	return srvEntry.identity, nil
 }
 
-// KeyHex returns the derived HMAC key as hex. Test-only.
-func (a *PSKAuth) KeyHex() string { return hex.EncodeToString(a.key[:]) }
+// KeyHex returns the derived HMAC key of the first entry as hex.
+// Test-only; only useful when there's a single configured entry.
+func (a *PSKAuth) KeyHex() string {
+	if len(a.order) == 0 {
+		return ""
+	}
+	k := a.byLabel[a.order[0]].key
+	return hex.EncodeToString(k[:])
+}
 
 // derivePSKKey runs HKDF-SHA256 to expand `secret` into 32 bytes.
 func derivePSKKey(secret string) ([32]byte, error) {
@@ -172,9 +263,7 @@ func derivePSKKey(secret string) ([32]byte, error) {
 	return out, nil
 }
 
-// mac computes HMAC-SHA256(key, label || nonceA || nonceB). The
-// label byte-string is folded into the input so a single key can
-// safely produce direction-specific tags.
+// mac computes HMAC-SHA256(key, label || nonceA || nonceB).
 func mac(key []byte, label string, nonceA, nonceB []byte) []byte {
 	h := hmac.New(sha256.New, key)
 	h.Write([]byte(label))
@@ -183,7 +272,6 @@ func mac(key []byte, label string, nonceA, nonceB []byte) []byte {
 	return h.Sum(nil)
 }
 
-// randomNonce returns nonceSize random bytes.
 func randomNonce() ([nonceSize]byte, error) {
 	var n [nonceSize]byte
 	if _, err := io.ReadFull(rand.Reader, n[:]); err != nil {
@@ -192,7 +280,6 @@ func randomNonce() ([nonceSize]byte, error) {
 	return n, nil
 }
 
-// readAuth reads one length-delimited [api.AuthMessage] from r.
 func readAuth(r io.Reader, msg *api.AuthMessage) error {
 	br, ok := r.(io.ByteReader)
 	if !ok {
@@ -205,16 +292,11 @@ func readAuth(r io.Reader, msg *api.AuthMessage) error {
 	return protodelim.UnmarshalFrom(combined, msg)
 }
 
-// writeAuth marshals msg as a length-delimited frame and writes it
-// to w.
 func writeAuth(w io.Writer, msg *api.AuthMessage) error {
 	_, err := protodelim.MarshalTo(w, msg)
 	return err
 }
 
-// singleByteReader adapts an [io.Reader] to [io.ByteReader].
-// protodelim needs a ByteReader to scan the varint length prefix;
-// libp2p streams don't bring one natively.
 type singleByteReader struct {
 	r io.Reader
 	b [1]byte

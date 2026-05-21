@@ -140,10 +140,20 @@ func (*AuthMessage_ServerProof) isAuthMessage_Kind() {}
 func (*AuthMessage_ClientProof) isAuthMessage_Kind() {}
 
 // ClientHello is the first message: the dialer picks 32 random
-// bytes and sends them as a challenge.
+// bytes and sends them as a challenge. `label` is an unauthenticated
+// hint telling the server which configured secret/role to verify
+// against — useful when the server has multiple secrets (owner +
+// reader). Empty label means "owner" (the historical single-secret
+// default).
+//
+// The label is just a hint: the server uses it to look up the
+// right key, then runs the standard MAC verification. A client that
+// lies about the label can't produce a valid MAC against a
+// different key, so the handshake fails as it should.
 type ClientHello struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Nonce         []byte                 `protobuf:"bytes,1,opt,name=nonce,proto3" json:"nonce,omitempty"`
+	Label         string                 `protobuf:"bytes,2,opt,name=label,proto3" json:"label,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -183,6 +193,13 @@ func (x *ClientHello) GetNonce() []byte {
 		return x.Nonce
 	}
 	return nil
+}
+
+func (x *ClientHello) GetLabel() string {
+	if x != nil {
+		return x.Label
+	}
+	return ""
 }
 
 // ServerProof is the listener's response: its own 32-byte nonce
@@ -295,9 +312,10 @@ const file_internal_api_auth_proto_rawDesc = "" +
 	"\fclient_hello\x18\x01 \x01(\v2\x14.ship.v1.ClientHelloH\x00R\vclientHello\x129\n" +
 	"\fserver_proof\x18\x02 \x01(\v2\x14.ship.v1.ServerProofH\x00R\vserverProof\x129\n" +
 	"\fclient_proof\x18\x03 \x01(\v2\x14.ship.v1.ClientProofH\x00R\vclientProofB\x06\n" +
-	"\x04kind\"#\n" +
+	"\x04kind\"9\n" +
 	"\vClientHello\x12\x14\n" +
-	"\x05nonce\x18\x01 \x01(\fR\x05nonce\"5\n" +
+	"\x05nonce\x18\x01 \x01(\fR\x05nonce\x12\x14\n" +
+	"\x05label\x18\x02 \x01(\tR\x05label\"5\n" +
 	"\vServerProof\x12\x14\n" +
 	"\x05nonce\x18\x01 \x01(\fR\x05nonce\x12\x10\n" +
 	"\x03mac\x18\x02 \x01(\fR\x03mac\"\x1f\n" +

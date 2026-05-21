@@ -146,6 +146,135 @@ func TestPSKAuth_Handshake_MismatchedSecretsFail(t *testing.T) {
 	}
 }
 
+func TestMultiPSKAuth_OwnerAndReaderRoles(t *testing.T) {
+	t.Parallel()
+
+	// Server side knows both secrets, each mapped to a different
+	// Identity. Clients hold one secret each.
+	server, err := auth.NewMultiPSKAuth([]auth.NamedSecret{
+		{Label: auth.LabelOwner, Secret: "ownerpw", Caps: auth.Capabilities{Owner: true, Write: true, Resize: true}},
+		{Label: auth.LabelReader, Secret: "readerpw", Caps: auth.Capabilities{}},
+	})
+	if err != nil {
+		t.Fatalf("NewMultiPSKAuth: %v", err)
+	}
+
+	ownerClient, _ := auth.NewMultiPSKAuth([]auth.NamedSecret{
+		{Label: auth.LabelOwner, Secret: "ownerpw", Caps: auth.Capabilities{Owner: true, Write: true, Resize: true}},
+	})
+	readerClient, _ := auth.NewMultiPSKAuth([]auth.NamedSecret{
+		{Label: auth.LabelReader, Secret: "readerpw", Caps: auth.Capabilities{}},
+	})
+
+	cases := []struct {
+		name       string
+		client     *auth.PSKAuth
+		wantOwner  bool
+		wantWrite  bool
+		wantLabel  string
+	}{
+		{"owner role", ownerClient, true, true, auth.LabelOwner},
+		{"reader role", readerClient, false, false, auth.LabelReader},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			clientSide, serverSide := newPipeRWC()
+
+			type result struct {
+				id  auth.Identity
+				err error
+			}
+			ch := make(chan result, 1)
+			go func() {
+				id, err := tc.client.ClientHandshake(context.Background(), clientSide)
+				ch <- result{id: id, err: err}
+			}()
+			sid, serr := server.ServerHandshake(context.Background(), serverSide)
+			if serr != nil {
+				t.Fatalf("ServerHandshake: %v", serr)
+			}
+			cr := <-ch
+			if cr.err != nil {
+				t.Fatalf("ClientHandshake: %v", cr.err)
+			}
+			if sid.IsOwner() != tc.wantOwner {
+				t.Errorf("server identity IsOwner = %v, want %v", sid.IsOwner(), tc.wantOwner)
+			}
+			if sid.CanWrite() != tc.wantWrite {
+				t.Errorf("server identity CanWrite = %v, want %v", sid.CanWrite(), tc.wantWrite)
+			}
+			if sid.Label != tc.wantLabel {
+				t.Errorf("server identity Label = %q, want %q", sid.Label, tc.wantLabel)
+			}
+			if cr.id.Label != tc.wantLabel {
+				t.Errorf("client identity Label = %q, want %q", cr.id.Label, tc.wantLabel)
+			}
+		})
+	}
+}
+
+func TestMultiPSKAuth_WrongSecretForLabelFails(t *testing.T) {
+	t.Parallel()
+
+	server, _ := auth.NewMultiPSKAuth([]auth.NamedSecret{
+		{Label: auth.LabelOwner, Secret: "ownerpw", Caps: auth.Capabilities{Owner: true}},
+		{Label: auth.LabelReader, Secret: "readerpw", Caps: auth.Capabilities{}},
+	})
+
+	// Client claims owner role but holds the wrong secret. Should
+	// fail because the server's MAC won't validate against the
+	// client's key.
+	imposter, _ := auth.NewMultiPSKAuth([]auth.NamedSecret{
+		{Label: auth.LabelOwner, Secret: "wrong-owner-pw", Caps: auth.Capabilities{Owner: true}},
+	})
+
+	clientSide, serverSide := newPipeRWC()
+	clientErrCh := make(chan error, 1)
+	go func() {
+		_, err := imposter.ClientHandshake(context.Background(), clientSide)
+		_ = clientSide.Close()
+		clientErrCh <- err
+	}()
+	_, serverErr := server.ServerHandshake(context.Background(), serverSide)
+	_ = serverSide.Close()
+	clientErr := <-clientErrCh
+
+	if serverErr == nil && clientErr == nil {
+		t.Fatal("wrong secret must fail handshake")
+	}
+	if !errors.Is(serverErr, auth.ErrUnauthorized) && !errors.Is(clientErr, auth.ErrUnauthorized) {
+		t.Errorf("expected ErrUnauthorized; got serverErr=%v clientErr=%v", serverErr, clientErr)
+	}
+}
+
+func TestMultiPSKAuth_UnknownLabelFails(t *testing.T) {
+	t.Parallel()
+
+	server, _ := auth.NewMultiPSKAuth([]auth.NamedSecret{
+		{Label: auth.LabelOwner, Secret: "ownerpw", Caps: auth.Capabilities{Owner: true}},
+	})
+
+	// Client uses a label the server doesn't know.
+	stranger, _ := auth.NewMultiPSKAuth([]auth.NamedSecret{
+		{Label: "ghost", Secret: "anything", Caps: auth.Capabilities{}},
+	})
+
+	clientSide, serverSide := newPipeRWC()
+	go func() {
+		_, _ = stranger.ClientHandshake(context.Background(), clientSide)
+		_ = clientSide.Close()
+	}()
+	_, err := server.ServerHandshake(context.Background(), serverSide)
+	_ = serverSide.Close()
+	if err == nil {
+		t.Fatal("server must reject unknown label")
+	}
+	if !errors.Is(err, auth.ErrUnauthorized) {
+		t.Errorf("expected ErrUnauthorized; got %v", err)
+	}
+}
+
 func TestPSKAuth_Handshake_RejectsGarbledServerProof(t *testing.T) {
 	t.Parallel()
 	a, _ := auth.NewPSKAuth("hunter2")
