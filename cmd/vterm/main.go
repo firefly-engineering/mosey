@@ -1,13 +1,19 @@
-// Command vterm runs a program under a libp2p-reachable PTY.
+// Command vterm runs a program under a ship-reachable PTY.
 //
 // Usage:
 //
-//	vterm --secret=SECRET [--listen=ADDR] -- PROGRAM [ARGS...]
+//	vterm --secret=SECRET [--listen=URI ...] -- PROGRAM [ARGS...]
+//
+// --listen is repeatable; each value picks a backend by URI scheme:
+//
+//	libp2p://         — libp2p host (default if no --listen is given)
+//
+// (more backends like https:// land as separate commits.)
 //
 // The program runs in the foreground; vterm exits when the program
 // exits. Other peers that share SECRET can attach via
-// `attach --secret=SECRET ADDR` where ADDR is one of the multiaddrs
-// printed at startup.
+// `attach --secret=SECRET ENDPOINT` where ENDPOINT is one of the
+// addresses printed at startup.
 package main
 
 import (
@@ -16,14 +22,17 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"os"
 	"os/exec"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/libp2p/go-libp2p/core/peer"
 
 	"github.com/firefly-engineering/ship/internal/auth"
+	"github.com/firefly-engineering/ship/internal/transport"
 	libp2pbackend "github.com/firefly-engineering/ship/internal/transport/libp2p"
 	"github.com/firefly-engineering/ship/internal/vterm"
 )
@@ -36,7 +45,8 @@ func run(args []string, stderr *os.File) int {
 	fs := flag.NewFlagSet("vterm", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	secret := fs.String("secret", "", "shared PSK; required, must match the attach side")
-	listen := fs.String("listen", "", "comma-separated multiaddrs to bind; default = random ports on all interfaces (TCP + QUIC)")
+	listens := stringSliceFlag{}
+	fs.Var(&listens, "listen", "backend listener; repeatable (libp2p://). Default: libp2p:// with random TCP+QUIC ports.")
 	noBootstrap := fs.Bool("no-bootstrap", false, "skip the IPFS public bootstrap set; useful for LAN-only / offline testing")
 	logLevel := fs.String("log-level", "warn", "slog level: debug|info|warn|error")
 
@@ -56,6 +66,9 @@ func run(args []string, stderr *os.File) int {
 		fmt.Fprintln(stderr, "vterm: missing program; usage: vterm --secret=SECRET -- PROGRAM [ARGS...]")
 		return 2
 	}
+	if len(listens) == 0 {
+		listens = stringSliceFlag{"libp2p://"}
+	}
 
 	logger := newLogger(stderr, *logLevel)
 
@@ -68,26 +81,28 @@ func run(args []string, stderr *os.File) int {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
-	backendOpts := libp2pbackend.Options{}
-	if *listen != "" {
-		fmt.Fprintln(stderr, "vterm: --listen is not yet implemented; ignoring")
+	backends, err := buildBackends(ctx, listens, *noBootstrap)
+	if err != nil {
+		fmt.Fprintln(stderr, "vterm:", err)
+		return 2
 	}
-	if *noBootstrap {
-		backendOpts.Bootstrap = []peer.AddrInfo{} // explicit empty: skip bootstrap
-	}
+	defer func() {
+		for _, b := range backends {
+			_ = b.Close()
+		}
+	}()
 
-	backend, err := libp2pbackend.New(ctx, backendOpts)
+	// Aggregate every backend behind one Transport. With a single
+	// backend, Multi is a passthrough; with multiple, it routes
+	// inbound handles to all of them and dispatches outbound dials
+	// by URI scheme.
+	multi, err := transport.Multi(backends...)
 	if err != nil {
 		fmt.Fprintln(stderr, "vterm:", err)
 		return 1
 	}
-	defer func() { _ = backend.Close() }()
 
-	// Wrap the libp2p backend with the app-layer auth handshake.
-	// Every Dial / inbound stream goes through PSK challenge-response
-	// before the application sees it. Serve installs the /ship/auth/
-	// listener on the inner transport.
-	authed := auth.Wrap(backend, psk)
+	authed := auth.Wrap(multi, psk)
 	authed.Serve()
 
 	for _, ep := range authed.Endpoints() {
@@ -103,6 +118,62 @@ func run(args []string, stderr *os.File) int {
 		return 1
 	}
 	return 0
+}
+
+// stringSliceFlag is a [flag.Value] that accumulates each repetition
+// of a flag into a slice. Used for --listen.
+type stringSliceFlag []string
+
+func (s *stringSliceFlag) Set(v string) error {
+	*s = append(*s, v)
+	return nil
+}
+
+func (s *stringSliceFlag) String() string {
+	if s == nil {
+		return ""
+	}
+	return strings.Join(*s, ",")
+}
+
+// buildBackends constructs one transport per --listen URI, picking
+// the backend by URI scheme.
+func buildBackends(ctx context.Context, listens []string, noBootstrap bool) ([]transport.Transport, error) {
+	out := make([]transport.Transport, 0, len(listens))
+	for _, raw := range listens {
+		scheme, err := schemeOf(raw)
+		if err != nil {
+			return nil, fmt.Errorf("--listen=%q: %w", raw, err)
+		}
+		switch scheme {
+		case libp2pbackend.Scheme:
+			opts := libp2pbackend.Options{}
+			if noBootstrap {
+				opts.Bootstrap = []peer.AddrInfo{}
+			}
+			b, err := libp2pbackend.New(ctx, opts)
+			if err != nil {
+				return nil, fmt.Errorf("--listen=%q: %w", raw, err)
+			}
+			out = append(out, b)
+		default:
+			return nil, fmt.Errorf("--listen=%q: unknown scheme %q (have: libp2p)", raw, scheme)
+		}
+	}
+	return out, nil
+}
+
+// schemeOf pulls the URI scheme from a listen value. "libp2p://" →
+// "libp2p"; "https://0.0.0.0:443/ship" → "https".
+func schemeOf(s string) (string, error) {
+	u, err := url.Parse(s)
+	if err != nil {
+		return "", fmt.Errorf("parse: %w", err)
+	}
+	if u.Scheme == "" {
+		return "", errors.New("missing scheme")
+	}
+	return u.Scheme, nil
 }
 
 func newLogger(out *os.File, level string) *slog.Logger {
