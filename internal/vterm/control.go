@@ -16,14 +16,20 @@ import (
 
 // handleControl is the libp2p stream handler for [api.ProtoControl].
 // Reads length-delimited [api.ControlMessage] frames from the stream
-// and dispatches each to the live PTY / child process. Closes when
+// and dispatches each to the live PTY / child process. Returns when
 // the peer closes its write side, the stream errors, or the service
-// is torn down.
+// is torn down. On clean shutdown the stream is Closed (not Reset)
+// so the peer sees EOF rather than a transport-error report.
 func (s *Service) handleControl(stream network.Stream) {
 	remote := stream.Conn().RemotePeer()
 	s.logger.Info("control opened", "peer", remote)
+	cleanShutdown := true
 	defer func() {
-		_ = stream.Reset()
+		if cleanShutdown {
+			_ = stream.Close()
+		} else {
+			_ = stream.Reset()
+		}
 		s.logger.Info("control closed", "peer", remote)
 	}()
 
@@ -31,7 +37,8 @@ func (s *Service) handleControl(stream network.Stream) {
 	for {
 		var msg api.ControlMessage
 		if err := protodelim.UnmarshalFrom(reader, &msg); err != nil {
-			if !errors.Is(err, io.EOF) {
+			if !isExpectedShutdown(err) {
+				cleanShutdown = false
 				s.logger.Warn("control read", "peer", remote, "err", err)
 			}
 			return

@@ -17,6 +17,7 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
+	"strings"
 	"sync"
 	"syscall"
 
@@ -121,15 +122,13 @@ func Run(ctx context.Context, opts Options, argv []string) error {
 
 // handlePTY is the libp2p stream handler for [api.ProtoPTY]. It
 // runs two goroutines — pty→stream and stream→pty — and returns
-// when either direction errors. The stream is reset on exit so the
-// peer notices the disconnect.
+// when either direction reaches EOF / errors. On a clean child
+// exit (PTY read returns EOF) we Close the stream so the remote
+// peer's io.Copy returns EOF, not a "stream reset" error. We only
+// Reset on truly unexpected errors.
 func (s *Service) handlePTY(stream network.Stream) {
 	remote := stream.Conn().RemotePeer()
 	s.logger.Info("attach opened", "peer", remote)
-	defer func() {
-		_ = stream.Reset()
-		s.logger.Info("attach closed", "peer", remote)
-	}()
 
 	// Output: pty -> stream. The PTY master file is shared across
 	// every attacher; reads race so one attacher gets each byte. For
@@ -148,7 +147,45 @@ func (s *Service) handlePTY(stream network.Stream) {
 	}()
 
 	err := <-errc
-	if err != nil && !errors.Is(err, io.EOF) {
+	if err == nil || isExpectedShutdown(err) {
+		_ = stream.Close()
+	} else {
 		s.logger.Warn("attach stream error", "peer", remote, "err", err)
+		_ = stream.Reset()
 	}
+	s.logger.Info("attach closed", "peer", remote)
+}
+
+// isExpectedShutdown reports whether err is a "the peer or the
+// transport told us we're done" signal — EOF, libp2p stream reset,
+// context cancellation, connection closed. These shouldn't generate
+// warnings in handler exit paths; they're normal lifecycle.
+func isExpectedShutdown(err error) bool {
+	if err == nil {
+		return true
+	}
+	if errors.Is(err, io.EOF) ||
+		errors.Is(err, network.ErrReset) ||
+		errors.Is(err, context.Canceled) ||
+		errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	// libp2p surfaces connection closure as wrapped errors that
+	// don't always sentinel-match (e.g. "sent go away", "connection
+	// closed"). Fall back to substring match on the wire-visible
+	// shutdown strings.
+	msg := err.Error()
+	for _, sub := range shutdownErrorSubstrings {
+		if strings.Contains(msg, sub) {
+			return true
+		}
+	}
+	return false
+}
+
+var shutdownErrorSubstrings = []string{
+	"sent go away",
+	"connection closed",
+	"stream reset",
+	"use of closed network connection",
 }
