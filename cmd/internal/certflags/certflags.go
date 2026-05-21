@@ -1,6 +1,6 @@
 // Package certflags wires the workspace-cert authenticator into a
-// CLI. Shared by cmd/vterm and cmd/attach so the user-facing flag
-// surface is identical on both sides.
+// CLI. Shared by `mosey launch`, `mosey attach`, and `mosey control`
+// so the user-facing flag surface is identical on every side.
 package certflags
 
 import (
@@ -23,17 +23,17 @@ import (
 // flag set via Register; resolve to an Authenticator (or
 // nil-no-cert) via Build.
 type Flags struct {
-	CertPath        string
-	KeyPath         string
-	MasterPubPath   string
-	WorkspaceID     string
-	RevocationPath  string
+	CertPath       string
+	KeyPath        string
+	MasterPubPath  string
+	WorkspaceID    string
+	RevocationPath string
 }
 
 // Register attaches the flags to fs. Pass the same Flags pointer
 // to Build after fs.Parse.
 func (f *Flags) Register(fs *flag.FlagSet) {
-	fs.StringVar(&f.CertPath, "cert", "", "path to this peer's workspace cert (mints via `ship-cert mint-agent`)")
+	fs.StringVar(&f.CertPath, "cert", "", "path to this peer's workspace cert (mints via `mosey cert mint-agent`)")
 	fs.StringVar(&f.KeyPath, "key", "", "path to the Ed25519 private key matching --cert")
 	fs.StringVar(&f.MasterPubPath, "master-pub", "", "path to the workspace master public key (hex). Required when --cert is set.")
 	fs.StringVar(&f.WorkspaceID, "workspace", "", "workspace id this peer belongs to. Required when --cert is set.")

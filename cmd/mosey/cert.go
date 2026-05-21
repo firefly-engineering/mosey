@@ -1,23 +1,5 @@
-// Command ship-cert is the workspace-master + cert minting tool.
-//
-// Subcommands:
-//
-//	mint-master --out=DIR
-//	  Generate a fresh BIP-39 mnemonic master keypair. Writes
-//	  master.pub + master.key to DIR; prints the mnemonic to
-//	  stdout for the user to back up.
-//
-//	mint-agent --master-key=PATH --workspace=ID \
-//	           --agent-id=ID --label=LABEL --caps=CAPS \
-//	           --valid-for=DURATION --out=DIR
-//	  Mint a per-agent cert + keypair. CAPS is a comma-separated
-//	  list of "owner", "write", "resize". Writes <agent>.cert
-//	  and <agent>.key to DIR.
-//
-//	revoke --revocation-file=PATH --serial=SERIAL
-//	  Append SERIAL to PATH (creating the file if needed). The
-//	  vterm process re-reads its --revocation-file on SIGHUP to
-//	  pick up the new entry.
+// runCert implements `mosey cert` — workspace-master + cert
+// minting. See main.go for the binary-level usage.
 package main
 
 import (
@@ -38,13 +20,9 @@ import (
 	"github.com/firefly-engineering/mosey/internal/cert"
 )
 
-func main() {
-	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
-}
-
-func run(args []string, stdout, stderr *os.File) int {
+func runCert(args []string, stdout, stderr *os.File) int {
 	if len(args) < 1 {
-		usage(stderr)
+		certUsage(stderr)
 		return 2
 	}
 	switch args[0] {
@@ -55,17 +33,17 @@ func run(args []string, stdout, stderr *os.File) int {
 	case "revoke":
 		return cmdRevoke(args[1:], stdout, stderr)
 	case "-h", "--help", "help":
-		usage(stdout)
+		certUsage(stdout)
 		return 0
 	default:
-		fmt.Fprintf(stderr, "ship-cert: unknown subcommand %q\n", args[0])
-		usage(stderr)
+		fmt.Fprintf(stderr, "mosey cert: unknown subcommand %q\n", args[0])
+		certUsage(stderr)
 		return 2
 	}
 }
 
-func usage(w *os.File) {
-	fmt.Fprintln(w, `ship-cert: workspace-master + cert minting
+func certUsage(w *os.File) {
+	fmt.Fprintln(w, `mosey cert: workspace-master + cert minting
 
 Subcommands:
   mint-master --out=DIR

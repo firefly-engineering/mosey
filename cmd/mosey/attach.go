@@ -1,13 +1,6 @@
-// Command attach connects to a ship vterm and bridges its PTY
-// stream to the local terminal.
-//
-// Usage:
-//
-//	attach --secret=SECRET ENDPOINT
-//
-// ENDPOINT is the address printed by `vterm` at startup
-// (e.g. "libp2p:/ip4/192.168.1.10/tcp/4001/p2p/12D3KooW..." or a
-// bare multiaddr).
+// runAttach implements `mosey attach` — connect to a mosey vterm
+// and bridge its PTY stream to the local terminal. See main.go for
+// the binary-level usage.
 package main
 
 import (
@@ -15,7 +8,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
@@ -30,12 +22,8 @@ import (
 	libp2pbackend "github.com/firefly-engineering/mosey/internal/transport/libp2p"
 )
 
-func main() {
-	os.Exit(run(os.Args[1:], os.Stderr))
-}
-
-func run(args []string, stderr *os.File) int {
-	fs := flag.NewFlagSet("attach", flag.ContinueOnError)
+func runAttach(args []string, stderr *os.File) int {
+	fs := flag.NewFlagSet("mosey attach", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	secret := fs.String("secret", "", "shared PSK; mutually exclusive with --cert. Must match the vterm side.")
 	noBootstrap := fs.Bool("no-p2p-bootstrap", false, "skip the IPFS public bootstrap set; useful for LAN-only / offline testing")
@@ -48,19 +36,19 @@ func run(args []string, stderr *os.File) int {
 		if errors.Is(err, flag.ErrHelp) {
 			return 0
 		}
-		fmt.Fprintln(stderr, "attach:", err)
+		fmt.Fprintln(stderr, "mosey attach:", err)
 		return 2
 	}
 	if *secret == "" && !certCfg.Configured() {
-		fmt.Fprintln(stderr, "attach: either --secret (PSK) or --cert/--key/--master-pub (workspace cert) is required")
+		fmt.Fprintln(stderr, "mosey attach: either --secret (PSK) or --cert/--key/--master-pub (workspace cert) is required")
 		return 2
 	}
 	if *secret != "" && certCfg.Configured() {
-		fmt.Fprintln(stderr, "attach: --secret and --cert are mutually exclusive (pick one auth model)")
+		fmt.Fprintln(stderr, "mosey attach: --secret and --cert are mutually exclusive (pick one auth model)")
 		return 2
 	}
 	if fs.NArg() != 1 {
-		fmt.Fprintln(stderr, "attach: expected exactly one positional argument (endpoint)")
+		fmt.Fprintln(stderr, "mosey attach: expected exactly one positional argument (endpoint)")
 		return 2
 	}
 	target := fs.Arg(0)
@@ -69,7 +57,7 @@ func run(args []string, stderr *os.File) int {
 
 	authenticator, err := buildAttachAuthenticator(*secret, &certCfg)
 	if err != nil {
-		fmt.Fprintln(stderr, "attach:", err)
+		fmt.Fprintln(stderr, "mosey attach:", err)
 		return 2
 	}
 
@@ -81,7 +69,7 @@ func run(args []string, stderr *os.File) int {
 	// CLI invocation can target either backend.
 	libp2pBackend, err := libp2pbackend.New(ctx, libp2pOptsForAttach(*noBootstrap))
 	if err != nil {
-		fmt.Fprintln(stderr, "attach:", err)
+		fmt.Fprintln(stderr, "mosey attach:", err)
 		return 1
 	}
 	defer func() { _ = libp2pBackend.Close() }()
@@ -90,14 +78,14 @@ func run(args []string, stderr *os.File) int {
 		InsecureSkipVerify: *insecureTLS,
 	}) // client-only
 	if err != nil {
-		fmt.Fprintln(stderr, "attach:", err)
+		fmt.Fprintln(stderr, "mosey attach:", err)
 		return 1
 	}
 	defer func() { _ = httpBackend.Close() }()
 
 	multi, err := transport.Multi(libp2pBackend, httpBackend)
 	if err != nil {
-		fmt.Fprintln(stderr, "attach:", err)
+		fmt.Fprintln(stderr, "mosey attach:", err)
 		return 1
 	}
 
@@ -110,7 +98,7 @@ func run(args []string, stderr *os.File) int {
 		Target:    target,
 		Logger:    logger,
 	}); err != nil {
-		fmt.Fprintln(stderr, "attach:", err)
+		fmt.Fprintln(stderr, "mosey attach:", err)
 		return 1
 	}
 	return 0
@@ -135,19 +123,4 @@ func libp2pOptsForAttach(noBootstrap bool) libp2pbackend.Options {
 		opts.Bootstrap = []peer.AddrInfo{}
 	}
 	return opts
-}
-
-func newLogger(out *os.File, level string) *slog.Logger {
-	var lvl slog.Level
-	switch level {
-	case "debug":
-		lvl = slog.LevelDebug
-	case "info":
-		lvl = slog.LevelInfo
-	case "warn":
-		lvl = slog.LevelWarn
-	default:
-		lvl = slog.LevelError
-	}
-	return slog.New(slog.NewTextHandler(out, &slog.HandlerOptions{Level: lvl}))
 }

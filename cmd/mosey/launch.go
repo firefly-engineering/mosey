@@ -1,23 +1,6 @@
-// Command vterm runs a program under a ship-reachable PTY.
-//
-// Usage:
-//
-//	vterm --secret=SECRET [--listen=URI ...] -- PROGRAM [ARGS...]
-//
-// --listen is repeatable; each value picks a backend by URI scheme:
-//
-//	libp2p://          libp2p host (default if no --listen is given)
-//	http://host:port   HTTP/2 cleartext (h2c) listener
-//
-// Both can be active simultaneously: `vterm --listen=libp2p://
-// --listen=http://0.0.0.0:8080 -- bash` listens on libp2p AND h2c
-// at the same time. Attach peers pick whichever scheme they can
-// reach.
-//
-// The program runs in the foreground; vterm exits when the program
-// exits. Other peers that share SECRET can attach via
-// `attach --secret=SECRET ENDPOINT` where ENDPOINT is one of the
-// addresses printed at startup.
+// runLaunch implements `mosey launch` — run a program under a
+// mosey-reachable PTY. See the binary-level usage in main.go for
+// the user-facing shape.
 package main
 
 import (
@@ -45,12 +28,8 @@ import (
 	"github.com/firefly-engineering/mosey/internal/vterm"
 )
 
-func main() {
-	os.Exit(run(os.Args[1:], os.Stderr))
-}
-
-func run(args []string, stderr *os.File) int {
-	fs := flag.NewFlagSet("vterm", flag.ContinueOnError)
+func runLaunch(args []string, stderr *os.File) int {
+	fs := flag.NewFlagSet("mosey launch", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	secret := fs.String("secret", "", "owner PSK; mutually exclusive with --cert. Attachers presenting this secret get full write + resize.")
 	readerSecret := fs.String("reader-secret", "", "optional reader PSK; attachers presenting it get observer (no write, no resize) access.")
@@ -68,20 +47,20 @@ func run(args []string, stderr *os.File) int {
 		if errors.Is(err, flag.ErrHelp) {
 			return 0
 		}
-		fmt.Fprintln(stderr, "vterm:", err)
+		fmt.Fprintln(stderr, "mosey launch:", err)
 		return 2
 	}
 	if *secret == "" && !certCfg.Configured() {
-		fmt.Fprintln(stderr, "vterm: either --secret (PSK) or --cert/--key/--master-pub (workspace cert) is required")
+		fmt.Fprintln(stderr, "mosey launch: either --secret (PSK) or --cert/--key/--master-pub (workspace cert) is required")
 		return 2
 	}
 	if *secret != "" && certCfg.Configured() {
-		fmt.Fprintln(stderr, "vterm: --secret and --cert are mutually exclusive (pick one auth model)")
+		fmt.Fprintln(stderr, "mosey launch: --secret and --cert are mutually exclusive (pick one auth model)")
 		return 2
 	}
 	argv := fs.Args()
 	if len(argv) == 0 {
-		fmt.Fprintln(stderr, "vterm: missing program; usage: vterm --secret=SECRET -- PROGRAM [ARGS...]")
+		fmt.Fprintln(stderr, "mosey launch: missing program; usage: mosey launch --secret=SECRET -- PROGRAM [ARGS...]")
 		return 2
 	}
 	if len(listens) == 0 {
@@ -92,7 +71,7 @@ func run(args []string, stderr *os.File) int {
 
 	authenticator, err := buildAuthenticator(*secret, *readerSecret, &certCfg, stderr)
 	if err != nil {
-		fmt.Fprintln(stderr, "vterm:", err)
+		fmt.Fprintln(stderr, "mosey launch:", err)
 		return 2
 	}
 
@@ -101,7 +80,7 @@ func run(args []string, stderr *os.File) int {
 
 	backends, err := buildBackends(ctx, listens, *noBootstrap, *httpCert, *httpKey)
 	if err != nil {
-		fmt.Fprintln(stderr, "vterm:", err)
+		fmt.Fprintln(stderr, "mosey launch:", err)
 		return 2
 	}
 	defer func() {
@@ -116,7 +95,7 @@ func run(args []string, stderr *os.File) int {
 	// by URI scheme.
 	multi, err := transport.Multi(backends...)
 	if err != nil {
-		fmt.Fprintln(stderr, "vterm:", err)
+		fmt.Fprintln(stderr, "mosey launch:", err)
 		return 1
 	}
 
@@ -132,12 +111,12 @@ func run(args []string, stderr *os.File) int {
 	}
 
 	for _, ep := range authed.Endpoints() {
-		fmt.Fprintf(stderr, "vterm listening: %s\n", ep)
+		fmt.Fprintf(stderr, "mosey launch: listening: %s\n", ep)
 	}
 
 	parsedMode, err := vterm.ParseMode(*mode)
 	if err != nil {
-		fmt.Fprintln(stderr, "vterm:", err)
+		fmt.Fprintln(stderr, "mosey launch:", err)
 		return 2
 	}
 
@@ -146,7 +125,7 @@ func run(args []string, stderr *os.File) int {
 		if errors.As(err, &exitErr) {
 			return exitErr.ExitCode()
 		}
-		fmt.Fprintln(stderr, "vterm:", err)
+		fmt.Fprintln(stderr, "mosey launch:", err)
 		return 1
 	}
 	return 0
@@ -185,7 +164,7 @@ func watchRevocationFile(ctx context.Context, path string, ca *auth.CertAuth, lo
 func buildAuthenticator(secret, readerSecret string, certCfg *certflags.Flags, stderr *os.File) (auth.Authenticator, error) {
 	if certCfg.Configured() {
 		if readerSecret != "" {
-			fmt.Fprintln(stderr, "vterm: --reader-secret is a PSK concept and is ignored when --cert is set (cert caps come from the cert payload)")
+			fmt.Fprintln(stderr, "mosey launch: --reader-secret is a PSK concept and is ignored when --cert is set (cert caps come from the cert payload)")
 		}
 		return certCfg.Build()
 	}
