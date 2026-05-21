@@ -36,6 +36,7 @@ import (
 
 	"github.com/libp2p/go-libp2p/core/peer"
 
+	"github.com/firefly-engineering/ship/cmd/internal/certflags"
 	"github.com/firefly-engineering/ship/internal/auth"
 	"github.com/firefly-engineering/ship/internal/transport"
 	httpbackend "github.com/firefly-engineering/ship/internal/transport/http2"
@@ -50,8 +51,10 @@ func main() {
 func run(args []string, stderr *os.File) int {
 	fs := flag.NewFlagSet("vterm", flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	secret := fs.String("secret", "", "owner PSK; required. Attachers presenting this secret get full write + resize.")
+	secret := fs.String("secret", "", "owner PSK; mutually exclusive with --cert. Attachers presenting this secret get full write + resize.")
 	readerSecret := fs.String("reader-secret", "", "optional reader PSK; attachers presenting it get observer (no write, no resize) access.")
+	var certCfg certflags.Flags
+	certCfg.Register(fs)
 	mode := fs.String("mode", "supersede", "multi-client mode: supersede (newest wins) | exclusive (one at a time) | primary-observer (first writer + observers) | multi-write (everyone types)")
 	httpCert := fs.String("http-cert", "", "PEM-encoded TLS cert path for https:// listeners. Required for https:// in --listen; h2c (http://) listens without it.")
 	httpKey := fs.String("http-key", "", "PEM-encoded TLS private key path matching --http-cert.")
@@ -67,8 +70,12 @@ func run(args []string, stderr *os.File) int {
 		fmt.Fprintln(stderr, "vterm:", err)
 		return 2
 	}
-	if *secret == "" {
-		fmt.Fprintln(stderr, "vterm: --secret is required")
+	if *secret == "" && !certCfg.Configured() {
+		fmt.Fprintln(stderr, "vterm: either --secret (PSK) or --cert/--key/--master-pub (workspace cert) is required")
+		return 2
+	}
+	if *secret != "" && certCfg.Configured() {
+		fmt.Fprintln(stderr, "vterm: --secret and --cert are mutually exclusive (pick one auth model)")
 		return 2
 	}
 	argv := fs.Args()
@@ -82,23 +89,7 @@ func run(args []string, stderr *os.File) int {
 
 	logger := newLogger(stderr, *logLevel)
 
-	pskEntries := []auth.NamedSecret{{
-		Label:  auth.LabelOwner,
-		Secret: *secret,
-		Caps:   auth.Capabilities{Owner: true, Write: true, Resize: true},
-	}}
-	if *readerSecret != "" {
-		if *readerSecret == *secret {
-			fmt.Fprintln(stderr, "vterm: --reader-secret must differ from --secret")
-			return 2
-		}
-		pskEntries = append(pskEntries, auth.NamedSecret{
-			Label:  auth.LabelReader,
-			Secret: *readerSecret,
-			Caps:   auth.Capabilities{}, // observer
-		})
-	}
-	psk, err := auth.NewMultiPSKAuth(pskEntries)
+	authenticator, err := buildAuthenticator(*secret, *readerSecret, &certCfg, stderr)
 	if err != nil {
 		fmt.Fprintln(stderr, "vterm:", err)
 		return 2
@@ -128,7 +119,7 @@ func run(args []string, stderr *os.File) int {
 		return 1
 	}
 
-	authed := auth.Wrap(multi, psk)
+	authed := auth.Wrap(multi, authenticator)
 	authed.Serve()
 
 	for _, ep := range authed.Endpoints() {
@@ -150,6 +141,34 @@ func run(args []string, stderr *os.File) int {
 		return 1
 	}
 	return 0
+}
+
+// buildAuthenticator picks between the PSK and cert authenticator
+// based on which flags the user set. Flag validation already
+// rejected the "both set" case before this is called.
+func buildAuthenticator(secret, readerSecret string, certCfg *certflags.Flags, stderr *os.File) (auth.Authenticator, error) {
+	if certCfg.Configured() {
+		if readerSecret != "" {
+			fmt.Fprintln(stderr, "vterm: --reader-secret is a PSK concept and is ignored when --cert is set (cert caps come from the cert payload)")
+		}
+		return certCfg.Build()
+	}
+	pskEntries := []auth.NamedSecret{{
+		Label:  auth.LabelOwner,
+		Secret: secret,
+		Caps:   auth.Capabilities{Owner: true, Write: true, Resize: true},
+	}}
+	if readerSecret != "" {
+		if readerSecret == secret {
+			return nil, fmt.Errorf("--reader-secret must differ from --secret")
+		}
+		pskEntries = append(pskEntries, auth.NamedSecret{
+			Label:  auth.LabelReader,
+			Secret: readerSecret,
+			Caps:   auth.Capabilities{},
+		})
+	}
+	return auth.NewMultiPSKAuth(pskEntries)
 }
 
 // stringSliceFlag is a [flag.Value] that accumulates each repetition

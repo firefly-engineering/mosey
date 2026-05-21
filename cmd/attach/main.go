@@ -22,6 +22,7 @@ import (
 
 	"github.com/libp2p/go-libp2p/core/peer"
 
+	"github.com/firefly-engineering/ship/cmd/internal/certflags"
 	"github.com/firefly-engineering/ship/internal/attach"
 	"github.com/firefly-engineering/ship/internal/auth"
 	"github.com/firefly-engineering/ship/internal/transport"
@@ -36,10 +37,12 @@ func main() {
 func run(args []string, stderr *os.File) int {
 	fs := flag.NewFlagSet("attach", flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	secret := fs.String("secret", "", "shared PSK; required, must match the vterm side")
+	secret := fs.String("secret", "", "shared PSK; mutually exclusive with --cert. Must match the vterm side.")
 	noBootstrap := fs.Bool("no-p2p-bootstrap", false, "skip the IPFS public bootstrap set; useful for LAN-only / offline testing")
 	insecureTLS := fs.Bool("insecure-tls", false, "for https:// endpoints, skip server certificate verification (self-signed dev only)")
 	logLevel := fs.String("log-level", "warn", "slog level: debug|info|warn|error")
+	var certCfg certflags.Flags
+	certCfg.Register(fs)
 
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -48,8 +51,12 @@ func run(args []string, stderr *os.File) int {
 		fmt.Fprintln(stderr, "attach:", err)
 		return 2
 	}
-	if *secret == "" {
-		fmt.Fprintln(stderr, "attach: --secret is required")
+	if *secret == "" && !certCfg.Configured() {
+		fmt.Fprintln(stderr, "attach: either --secret (PSK) or --cert/--key/--master-pub (workspace cert) is required")
+		return 2
+	}
+	if *secret != "" && certCfg.Configured() {
+		fmt.Fprintln(stderr, "attach: --secret and --cert are mutually exclusive (pick one auth model)")
 		return 2
 	}
 	if fs.NArg() != 1 {
@@ -60,7 +67,7 @@ func run(args []string, stderr *os.File) int {
 
 	logger := newLogger(stderr, *logLevel)
 
-	psk, err := auth.NewPSKAuth(*secret)
+	authenticator, err := buildAttachAuthenticator(*secret, &certCfg)
 	if err != nil {
 		fmt.Fprintln(stderr, "attach:", err)
 		return 2
@@ -96,7 +103,7 @@ func run(args []string, stderr *os.File) int {
 
 	// Wrap with auth — Dial drives the /ship/auth/ handshake before
 	// opening the application stream. No Serve() on this side.
-	authed := auth.Wrap(multi, psk)
+	authed := auth.Wrap(multi, authenticator)
 
 	if err := attach.Run(ctx, attach.Options{
 		Transport: authed,
@@ -107,6 +114,16 @@ func run(args []string, stderr *os.File) int {
 		return 1
 	}
 	return 0
+}
+
+// buildAttachAuthenticator selects between PSK and cert auth on
+// the attach side. Mirror of vterm's buildAuthenticator, minus the
+// reader-secret concept (attach only carries one credential).
+func buildAttachAuthenticator(secret string, certCfg *certflags.Flags) (auth.Authenticator, error) {
+	if certCfg.Configured() {
+		return certCfg.Build()
+	}
+	return auth.NewPSKAuth(secret)
 }
 
 // libp2pOptsForAttach builds the libp2p backend's options for a
