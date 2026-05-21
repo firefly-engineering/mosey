@@ -99,14 +99,26 @@ func TestPSKAuth_Handshake_Succeeds(t *testing.T) {
 	}
 	clientSide, serverSide := newPipeRWC()
 
-	clientErr := make(chan error, 1)
-	go func() { clientErr <- a.ClientHandshake(context.Background(), clientSide) }()
+	type clientResult struct {
+		id  auth.Identity
+		err error
+	}
+	clientCh := make(chan clientResult, 1)
+	go func() {
+		id, err := a.ClientHandshake(context.Background(), clientSide)
+		clientCh <- clientResult{id: id, err: err}
+	}()
 
-	if err := a.ServerHandshake(context.Background(), serverSide); err != nil {
+	serverID, err := a.ServerHandshake(context.Background(), serverSide)
+	if err != nil {
 		t.Fatalf("ServerHandshake: %v", err)
 	}
-	if err := <-clientErr; err != nil {
-		t.Fatalf("ClientHandshake: %v", err)
+	cr := <-clientCh
+	if cr.err != nil {
+		t.Fatalf("ClientHandshake: %v", cr.err)
+	}
+	if !serverID.IsOwner() || !cr.id.IsOwner() {
+		t.Errorf("single-secret PSK should yield Owner on both sides; got server=%+v client=%+v", serverID, cr.id)
 	}
 }
 
@@ -118,15 +130,11 @@ func TestPSKAuth_Handshake_MismatchedSecretsFail(t *testing.T) {
 
 	clientErr := make(chan error, 1)
 	go func() {
-		err := good.ClientHandshake(context.Background(), clientSide)
-		// Close on exit so the peer-side handshake unblocks instead
-		// of waiting forever for the next message. The Wrap
-		// adapter does this for production callers; tests have to
-		// be explicit.
+		_, err := good.ClientHandshake(context.Background(), clientSide)
 		_ = clientSide.Close()
 		clientErr <- err
 	}()
-	serverErr := bad.ServerHandshake(context.Background(), serverSide)
+	_, serverErr := bad.ServerHandshake(context.Background(), serverSide)
 	_ = serverSide.Close()
 	cErr := <-clientErr
 	if serverErr == nil && cErr == nil {
@@ -152,7 +160,7 @@ func TestPSKAuth_Handshake_RejectsGarbledServerProof(t *testing.T) {
 		Writer: io.Discard,
 	}
 
-	err := a.ClientHandshake(context.Background(), clientSide)
+	_, err := a.ClientHandshake(context.Background(), clientSide)
 	if err == nil {
 		t.Fatal("client must reject garbled server proof")
 	}

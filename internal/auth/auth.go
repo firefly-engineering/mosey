@@ -20,25 +20,34 @@ import (
 )
 
 // Authenticator runs ship's authentication handshake from each side
-// of a freshly opened [api.ProtoAuth] stream. Implementations:
-//   - [PSKAuth]: HMAC challenge-response over a shared secret
-//   - (planned) workspace cert backend
+// of a freshly opened [api.ProtoAuth] stream. Successful handshakes
+// produce an [Identity] — backends that don't distinguish identities
+// (e.g. a single-secret PSK) return an Identity with full Owner
+// caps so the existing "secret == permission" mental model carries
+// over unchanged.
+//
+// Implementations:
+//   - [PSKAuth]: HMAC challenge-response over one or more named
+//     shared secrets (owner / reader / future roles)
+//   - (planned) workspace cert backend with caps embedded in the
+//     signed claim
 type Authenticator interface {
 	// Name is a short identifier used in logs / errors ("psk",
 	// "cert"). Stable; not part of the wire format.
 	Name() string
 
 	// ClientHandshake drives the handshake from the dialer side.
-	// Returning nil signals the application stream may proceed;
-	// returning an error closes the stream and (in the wrapper)
-	// propagates as a dial failure.
-	ClientHandshake(ctx context.Context, stream io.ReadWriteCloser) error
+	// Returns the local Identity (with caps reflecting which
+	// secret / cert the client presented) on success. Error closes
+	// the stream and propagates as a dial failure.
+	ClientHandshake(ctx context.Context, stream io.ReadWriteCloser) (Identity, error)
 
 	// ServerHandshake drives the handshake from the listener side.
-	// Returning nil signals the inbound application stream may
-	// reach the registered handler; returning an error closes the
-	// stream silently.
-	ServerHandshake(ctx context.Context, stream io.ReadWriteCloser) error
+	// Returns the remote peer's Identity on success — the auth
+	// wrapper records it so subsequent application streams from
+	// the same peer carry the same caps. Error closes the stream
+	// silently.
+	ServerHandshake(ctx context.Context, stream io.ReadWriteCloser) (Identity, error)
 }
 
 // ErrUnauthorized is the canonical failure surface for handshake

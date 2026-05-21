@@ -36,7 +36,10 @@ const (
 const nonceSize = 32
 
 // NewPSKAuth derives a 32-byte HMAC key from the supplied plaintext
-// secret via HKDF-SHA256 (salt = nil, info = "ship.v1.psk").
+// secret via HKDF-SHA256 (salt = nil, info = "ship.v1.psk"). The
+// resulting authenticator treats every successful handshake as
+// Owner — this is the single-secret backwards-compatible shape.
+// Use [NewMultiPSKAuth] when you want named roles (owner / reader).
 func NewPSKAuth(secret string) (*PSKAuth, error) {
 	if secret == "" {
 		return nil, errors.New("ship/auth: PSK secret must be non-empty")
@@ -45,25 +48,33 @@ func NewPSKAuth(secret string) (*PSKAuth, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &PSKAuth{key: key}, nil
+	return &PSKAuth{
+		key: key,
+		identity: Identity{
+			Label: "owner",
+			Caps:  Capabilities{Owner: true, Write: true, Resize: true},
+		},
+	}, nil
 }
 
 // PSKAuth is an [Authenticator] backed by a workspace-wide
 // pre-shared key. Both peers must derive the same key from the
 // same plaintext for the handshake to complete.
 type PSKAuth struct {
-	key [32]byte
+	key      [32]byte
+	identity Identity
 }
 
 // Name implements [Authenticator].
 func (a *PSKAuth) Name() string { return "psk" }
 
 // ClientHandshake implements [Authenticator]. Sends ClientHello,
-// validates the ServerProof, sends ClientProof.
-func (a *PSKAuth) ClientHandshake(_ context.Context, stream io.ReadWriteCloser) error {
+// validates the ServerProof, sends ClientProof. Returns the
+// authenticator's local Identity on success.
+func (a *PSKAuth) ClientHandshake(_ context.Context, stream io.ReadWriteCloser) (Identity, error) {
 	nonceC, err := randomNonce()
 	if err != nil {
-		return fmt.Errorf("ship/auth(psk): nonce: %w", err)
+		return Identity{}, fmt.Errorf("ship/auth(psk): nonce: %w", err)
 	}
 
 	if err := writeAuth(stream, &api.AuthMessage{
@@ -71,24 +82,24 @@ func (a *PSKAuth) ClientHandshake(_ context.Context, stream io.ReadWriteCloser) 
 			ClientHello: &api.ClientHello{Nonce: nonceC[:]},
 		},
 	}); err != nil {
-		return fmt.Errorf("ship/auth(psk): send client_hello: %w", err)
+		return Identity{}, fmt.Errorf("ship/auth(psk): send client_hello: %w", err)
 	}
 
 	var resp api.AuthMessage
 	if err := readAuth(stream, &resp); err != nil {
-		return fmt.Errorf("ship/auth(psk): read server_proof: %w", err)
+		return Identity{}, fmt.Errorf("ship/auth(psk): read server_proof: %w", err)
 	}
 	sp := resp.GetServerProof()
 	if sp == nil {
-		return fmt.Errorf("ship/auth(psk): %w: server sent %T, expected ServerProof", ErrUnauthorized, resp.GetKind())
+		return Identity{}, fmt.Errorf("ship/auth(psk): %w: server sent %T, expected ServerProof", ErrUnauthorized, resp.GetKind())
 	}
 	nonceS := sp.GetNonce()
 	if len(nonceS) != nonceSize {
-		return fmt.Errorf("ship/auth(psk): %w: server nonce length %d", ErrUnauthorized, len(nonceS))
+		return Identity{}, fmt.Errorf("ship/auth(psk): %w: server nonce length %d", ErrUnauthorized, len(nonceS))
 	}
 	wantServerMac := mac(a.key[:], macLabelServer, nonceC[:], nonceS)
 	if subtle.ConstantTimeCompare(sp.GetMac(), wantServerMac) != 1 {
-		return fmt.Errorf("ship/auth(psk): %w: server mac mismatch", ErrUnauthorized)
+		return Identity{}, fmt.Errorf("ship/auth(psk): %w: server mac mismatch", ErrUnauthorized)
 	}
 
 	clientMac := mac(a.key[:], macLabelClient, nonceS, nonceC[:])
@@ -97,30 +108,32 @@ func (a *PSKAuth) ClientHandshake(_ context.Context, stream io.ReadWriteCloser) 
 			ClientProof: &api.ClientProof{Mac: clientMac},
 		},
 	}); err != nil {
-		return fmt.Errorf("ship/auth(psk): send client_proof: %w", err)
+		return Identity{}, fmt.Errorf("ship/auth(psk): send client_proof: %w", err)
 	}
-	return nil
+	return a.identity, nil
 }
 
 // ServerHandshake implements [Authenticator]. Mirror of the client
 // path: read ClientHello, send ServerProof, validate ClientProof.
-func (a *PSKAuth) ServerHandshake(_ context.Context, stream io.ReadWriteCloser) error {
+// Returns the local Identity (single-secret PSK uses one role for
+// everyone) on success.
+func (a *PSKAuth) ServerHandshake(_ context.Context, stream io.ReadWriteCloser) (Identity, error) {
 	var hello api.AuthMessage
 	if err := readAuth(stream, &hello); err != nil {
-		return fmt.Errorf("ship/auth(psk): read client_hello: %w", err)
+		return Identity{}, fmt.Errorf("ship/auth(psk): read client_hello: %w", err)
 	}
 	ch := hello.GetClientHello()
 	if ch == nil {
-		return fmt.Errorf("ship/auth(psk): %w: client sent %T, expected ClientHello", ErrUnauthorized, hello.GetKind())
+		return Identity{}, fmt.Errorf("ship/auth(psk): %w: client sent %T, expected ClientHello", ErrUnauthorized, hello.GetKind())
 	}
 	nonceC := ch.GetNonce()
 	if len(nonceC) != nonceSize {
-		return fmt.Errorf("ship/auth(psk): %w: client nonce length %d", ErrUnauthorized, len(nonceC))
+		return Identity{}, fmt.Errorf("ship/auth(psk): %w: client nonce length %d", ErrUnauthorized, len(nonceC))
 	}
 
 	nonceS, err := randomNonce()
 	if err != nil {
-		return fmt.Errorf("ship/auth(psk): nonce: %w", err)
+		return Identity{}, fmt.Errorf("ship/auth(psk): nonce: %w", err)
 	}
 	serverMac := mac(a.key[:], macLabelServer, nonceC, nonceS[:])
 	if err := writeAuth(stream, &api.AuthMessage{
@@ -128,22 +141,22 @@ func (a *PSKAuth) ServerHandshake(_ context.Context, stream io.ReadWriteCloser) 
 			ServerProof: &api.ServerProof{Nonce: nonceS[:], Mac: serverMac},
 		},
 	}); err != nil {
-		return fmt.Errorf("ship/auth(psk): send server_proof: %w", err)
+		return Identity{}, fmt.Errorf("ship/auth(psk): send server_proof: %w", err)
 	}
 
 	var finish api.AuthMessage
 	if err := readAuth(stream, &finish); err != nil {
-		return fmt.Errorf("ship/auth(psk): read client_proof: %w", err)
+		return Identity{}, fmt.Errorf("ship/auth(psk): read client_proof: %w", err)
 	}
 	cp := finish.GetClientProof()
 	if cp == nil {
-		return fmt.Errorf("ship/auth(psk): %w: client sent %T, expected ClientProof", ErrUnauthorized, finish.GetKind())
+		return Identity{}, fmt.Errorf("ship/auth(psk): %w: client sent %T, expected ClientProof", ErrUnauthorized, finish.GetKind())
 	}
 	wantClientMac := mac(a.key[:], macLabelClient, nonceS[:], nonceC)
 	if subtle.ConstantTimeCompare(cp.GetMac(), wantClientMac) != 1 {
-		return fmt.Errorf("ship/auth(psk): %w: client mac mismatch", ErrUnauthorized)
+		return Identity{}, fmt.Errorf("ship/auth(psk): %w: client mac mismatch", ErrUnauthorized)
 	}
-	return nil
+	return a.identity, nil
 }
 
 // KeyHex returns the derived HMAC key as hex. Test-only.
