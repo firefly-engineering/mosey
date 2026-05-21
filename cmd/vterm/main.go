@@ -38,6 +38,7 @@ import (
 
 	"github.com/firefly-engineering/ship/cmd/internal/certflags"
 	"github.com/firefly-engineering/ship/internal/auth"
+	"github.com/firefly-engineering/ship/internal/cert"
 	"github.com/firefly-engineering/ship/internal/transport"
 	httpbackend "github.com/firefly-engineering/ship/internal/transport/http2"
 	libp2pbackend "github.com/firefly-engineering/ship/internal/transport/libp2p"
@@ -122,6 +123,14 @@ func run(args []string, stderr *os.File) int {
 	authed := auth.Wrap(multi, authenticator)
 	authed.Serve()
 
+	// Wire SIGHUP → revocation-file reload when CertAuth is the
+	// active authenticator and the user supplied a path. PSK auth
+	// has no revocation concept — the reload goroutine just stays
+	// off in that case.
+	if ca, ok := authenticator.(*auth.CertAuth); ok && certCfg.RevocationPath != "" {
+		go watchRevocationFile(ctx, certCfg.RevocationPath, ca, logger)
+	}
+
 	for _, ep := range authed.Endpoints() {
 		fmt.Fprintf(stderr, "vterm listening: %s\n", ep)
 	}
@@ -141,6 +150,33 @@ func run(args []string, stderr *os.File) int {
 		return 1
 	}
 	return 0
+}
+
+// watchRevocationFile listens for SIGHUP and re-reads path on
+// every signal, pushing the new set into ca.UpdateRevoked.
+// Runs until ctx is done; the SIGHUP subscription is detached on
+// exit. Errors during reload are logged at warn — the previously-
+// loaded list stays in effect (best-effort policy: a malformed
+// file shouldn't revoke our ability to revoke).
+func watchRevocationFile(ctx context.Context, path string, ca *auth.CertAuth, logger *slog.Logger) {
+	ch := make(chan os.Signal, 1)
+	signal.Notify(ch, syscall.SIGHUP)
+	defer signal.Stop(ch)
+	logger.Info("revocation-file SIGHUP watcher armed", "path", path)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ch:
+			revoked, err := cert.LoadRevocationFile(path)
+			if err != nil {
+				logger.Warn("revocation reload failed (keeping previous list)", "path", path, "err", err)
+				continue
+			}
+			ca.UpdateRevoked(revoked)
+			logger.Info("revocation list reloaded", "path", path, "entries", len(revoked))
+		}
+	}
 }
 
 // buildAuthenticator picks between the PSK and cert authenticator
