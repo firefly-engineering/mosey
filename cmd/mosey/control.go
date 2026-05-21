@@ -1,5 +1,5 @@
 // runControl implements `mosey control` — admin operations against
-// the vterm's /ship/control/ stream. See main.go for the binary-
+// the vterm's /mosey/control/ stream. See main.go for the binary-
 // level usage.
 package main
 

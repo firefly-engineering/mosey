@@ -1,15 +1,15 @@
-// ship's control protocol — out-of-band messages between a vterm
+// mosey's control protocol — out-of-band messages between a vterm
 // and an attached client. Carried on the libp2p stream
-// `/ship/control/1.0.0` as length-delimited [ControlMessage]
+// `/mosey/control/1.0.0` as length-delimited [ControlMessage]
 // envelopes. Both sides may write; v1 only attach → vterm is used
 // (Resize, Signal). v2 will add vterm → attach state events.
 syntax = "proto3";
 
-package ship.v1;
+package mosey.v1;
 
 option go_package = "github.com/firefly-engineering/mosey/internal/api;api";
 
-// ControlMessage is the envelope carried on /ship/control/. Each
+// ControlMessage is the envelope carried on /mosey/control/. Each
 // frame is length-delimited (varint length prefix + serialized
 // proto) so a single stream multiplexes typed messages without a
 // separate framing layer.

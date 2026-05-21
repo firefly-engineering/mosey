@@ -19,7 +19,7 @@ overwritten by new — there's no spill to disk.
 ```
 Client                                      Server (vterm)
   │                                           │
-  │ Dial(/ship/pty/1.0.0)                     │
+  │ Dial(/mosey/pty/1.0.0)                     │
   │ ─────────────────────────────────────────▶│
   │                                           │ start streaming
   │ ◀────── live bytes (seq N, N+1, N+2…) ────│
@@ -36,7 +36,7 @@ operation — it's only needed on reconnect.
 Client                                      Server (vterm)
   │ <connection drops>                        │
   │                                           │
-  │ Dial(/ship/pty-resume/1.0.0)              │
+  │ Dial(/mosey/pty-resume/1.0.0)              │
   │ ─────────────────────────────────────────▶│
   │ varint(last_seq)                          │
   │ ─────────────────────────────────────────▶│

@@ -3,7 +3,7 @@
 // concurrent attached clients.
 //
 // One Session owns one process and one PTY. The transport accepts
-// inbound /ship/pty/ streams; the session's mode (Supersede,
+// inbound /mosey/pty/ streams; the session's mode (Supersede,
 // Exclusive, PrimaryObserver, MultiWrite) decides how those
 // inbound streams coexist. A single PTY-reader goroutine fans
 // output out to every active client via a per-client buffered
@@ -28,6 +28,9 @@ import (
 	"github.com/firefly-engineering/mosey/internal/streambuf"
 	"github.com/firefly-engineering/mosey/internal/transport"
 )
+
+// errPrefix tags errors emitted by this package.
+const errPrefix = "mosey/vterm: "
 
 // Session is a running vterm: a child process under a PTY, plus
 // the registry of currently-attached clients, plus the transport
@@ -54,8 +57,8 @@ type Session struct {
 // Options configures [Run]. Transport is required; the rest pick
 // sensible defaults.
 type Options struct {
-	// Transport is where ship registers the /ship/pty and
-	// /ship/control handlers. Required; lifetime is the caller's.
+	// Transport is where vterm registers the /mosey/pty and
+	// /mosey/control handlers. Required; lifetime is the caller's.
 	Transport transport.Transport
 
 	// Logger is structured-log sink. Zero means discard.
@@ -74,10 +77,10 @@ type Options struct {
 // exit code via the embedded [*exec.ExitError] when applicable.
 func Run(ctx context.Context, opts Options, argv []string) error {
 	if opts.Transport == nil {
-		return errors.New("ship/vterm: Options.Transport required")
+		return errors.New(errPrefix + "Options.Transport required")
 	}
 	if len(argv) == 0 {
-		return errors.New("ship/vterm: argv must contain the program to run")
+		return errors.New(errPrefix + "argv must contain the program to run")
 	}
 	logger := opts.Logger
 	if logger == nil {
@@ -92,7 +95,7 @@ func Run(ctx context.Context, opts Options, argv []string) error {
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	ptmx, err := pty.StartWithSize(cmd, &pty.Winsize{Cols: 80, Rows: 24})
 	if err != nil {
-		return fmt.Errorf("ship/vterm: pty.Start: %w", err)
+		return fmt.Errorf(errPrefix+"pty.Start: %w", err)
 	}
 
 	sess := &Session{
@@ -133,7 +136,7 @@ func Run(ctx context.Context, opts Options, argv []string) error {
 			logger.Info("vterm child exited", "code", exitErr.ExitCode())
 			return exitErr
 		}
-		return fmt.Errorf("ship/vterm: child wait: %w", waitErr)
+		return fmt.Errorf(errPrefix+"child wait: %w", waitErr)
 	}
 	logger.Info("vterm child exited", "code", 0)
 	return nil

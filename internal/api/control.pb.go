@@ -1,6 +1,6 @@
-// ship's control protocol — out-of-band messages between a vterm
+// mosey's control protocol — out-of-band messages between a vterm
 // and an attached client. Carried on the libp2p stream
-// `/ship/control/1.0.0` as length-delimited [ControlMessage]
+// `/mosey/control/1.0.0` as length-delimited [ControlMessage]
 // envelopes. Both sides may write; v1 only attach → vterm is used
 // (Resize, Signal). v2 will add vterm → attach state events.
 
@@ -140,7 +140,7 @@ func (SetMode_Kind) EnumDescriptor() ([]byte, []int) {
 	return file_internal_api_control_proto_rawDescGZIP(), []int{3, 0}
 }
 
-// ControlMessage is the envelope carried on /ship/control/. Each
+// ControlMessage is the envelope carried on /mosey/control/. Each
 // frame is length-delimited (varint length prefix + serialized
 // proto) so a single stream multiplexes typed messages without a
 // separate framing layer.
@@ -389,7 +389,7 @@ func (x *Resize) GetRows() uint32 {
 // once the authn story matures.
 type Signal struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Kind          Signal_Kind            `protobuf:"varint,1,opt,name=kind,proto3,enum=ship.v1.Signal_Kind" json:"kind,omitempty"`
+	Kind          Signal_Kind            `protobuf:"varint,1,opt,name=kind,proto3,enum=mosey.v1.Signal_Kind" json:"kind,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -439,7 +439,7 @@ func (x *Signal) GetKind() Signal_Kind {
 // Kick/Promote RPCs to manage others).
 type SetMode struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Kind          SetMode_Kind           `protobuf:"varint,1,opt,name=kind,proto3,enum=ship.v1.SetMode_Kind" json:"kind,omitempty"`
+	Kind          SetMode_Kind           `protobuf:"varint,1,opt,name=kind,proto3,enum=mosey.v1.SetMode_Kind" json:"kind,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -795,32 +795,32 @@ var File_internal_api_control_proto protoreflect.FileDescriptor
 
 const file_internal_api_control_proto_rawDesc = "" +
 	"\n" +
-	"\x1ainternal/api/control.proto\x12\aship.v1\"\x91\x03\n" +
-	"\x0eControlMessage\x12)\n" +
-	"\x06resize\x18\x01 \x01(\v2\x0f.ship.v1.ResizeH\x00R\x06resize\x12)\n" +
-	"\x06signal\x18\x02 \x01(\v2\x0f.ship.v1.SignalH\x00R\x06signal\x12-\n" +
-	"\bset_mode\x18\x03 \x01(\v2\x10.ship.v1.SetModeH\x00R\asetMode\x12)\n" +
-	"\x06demote\x18\x04 \x01(\v2\x0f.ship.v1.DemoteH\x00R\x06demote\x129\n" +
-	"\flist_clients\x18\x05 \x01(\v2\x14.ship.v1.ListClientsH\x00R\vlistClients\x126\n" +
-	"\vclient_list\x18\x06 \x01(\v2\x13.ship.v1.ClientListH\x00R\n" +
-	"clientList\x12,\n" +
-	"\apromote\x18\a \x01(\v2\x10.ship.v1.PromoteH\x00R\apromote\x12#\n" +
-	"\x04kick\x18\b \x01(\v2\r.ship.v1.KickH\x00R\x04kickB\t\n" +
+	"\x1ainternal/api/control.proto\x12\bmosey.v1\"\x99\x03\n" +
+	"\x0eControlMessage\x12*\n" +
+	"\x06resize\x18\x01 \x01(\v2\x10.mosey.v1.ResizeH\x00R\x06resize\x12*\n" +
+	"\x06signal\x18\x02 \x01(\v2\x10.mosey.v1.SignalH\x00R\x06signal\x12.\n" +
+	"\bset_mode\x18\x03 \x01(\v2\x11.mosey.v1.SetModeH\x00R\asetMode\x12*\n" +
+	"\x06demote\x18\x04 \x01(\v2\x10.mosey.v1.DemoteH\x00R\x06demote\x12:\n" +
+	"\flist_clients\x18\x05 \x01(\v2\x15.mosey.v1.ListClientsH\x00R\vlistClients\x127\n" +
+	"\vclient_list\x18\x06 \x01(\v2\x14.mosey.v1.ClientListH\x00R\n" +
+	"clientList\x12-\n" +
+	"\apromote\x18\a \x01(\v2\x11.mosey.v1.PromoteH\x00R\apromote\x12$\n" +
+	"\x04kick\x18\b \x01(\v2\x0e.mosey.v1.KickH\x00R\x04kickB\t\n" +
 	"\apayload\"0\n" +
 	"\x06Resize\x12\x12\n" +
 	"\x04cols\x18\x01 \x01(\rR\x04cols\x12\x12\n" +
-	"\x04rows\x18\x02 \x01(\rR\x04rows\"\x99\x01\n" +
-	"\x06Signal\x12(\n" +
-	"\x04kind\x18\x01 \x01(\x0e2\x14.ship.v1.Signal.KindR\x04kind\"e\n" +
+	"\x04rows\x18\x02 \x01(\rR\x04rows\"\x9a\x01\n" +
+	"\x06Signal\x12)\n" +
+	"\x04kind\x18\x01 \x01(\x0e2\x15.mosey.v1.Signal.KindR\x04kind\"e\n" +
 	"\x04Kind\x12\x14\n" +
 	"\x10KIND_UNSPECIFIED\x10\x00\x12\f\n" +
 	"\bKIND_HUP\x10\x01\x12\f\n" +
 	"\bKIND_INT\x10\x02\x12\r\n" +
 	"\tKIND_TERM\x10\x03\x12\r\n" +
 	"\tKIND_USR1\x10\x04\x12\r\n" +
-	"\tKIND_USR2\x10\x05\"\xab\x01\n" +
-	"\aSetMode\x12)\n" +
-	"\x04kind\x18\x01 \x01(\x0e2\x15.ship.v1.SetMode.KindR\x04kind\"u\n" +
+	"\tKIND_USR2\x10\x05\"\xac\x01\n" +
+	"\aSetMode\x12*\n" +
+	"\x04kind\x18\x01 \x01(\x0e2\x16.mosey.v1.SetMode.KindR\x04kind\"u\n" +
 	"\x04Kind\x12\x14\n" +
 	"\x10KIND_UNSPECIFIED\x10\x00\x12\x12\n" +
 	"\x0eKIND_SUPERSEDE\x10\x01\x12\x12\n" +
@@ -828,10 +828,10 @@ const file_internal_api_control_proto_rawDesc = "" +
 	"\x15KIND_PRIMARY_OBSERVER\x10\x03\x12\x14\n" +
 	"\x10KIND_MULTI_WRITE\x10\x04\"\b\n" +
 	"\x06Demote\"\r\n" +
-	"\vListClients\";\n" +
+	"\vListClients\"<\n" +
 	"\n" +
-	"ClientList\x12-\n" +
-	"\aclients\x18\x01 \x03(\v2\x13.ship.v1.ClientInfoR\aclients\"\x84\x01\n" +
+	"ClientList\x12.\n" +
+	"\aclients\x18\x01 \x03(\v2\x14.mosey.v1.ClientInfoR\aclients\"\x84\x01\n" +
 	"\n" +
 	"ClientInfo\x12\x1b\n" +
 	"\tclient_id\x18\x01 \x01(\x03R\bclientId\x12\x14\n" +
@@ -859,31 +859,31 @@ func file_internal_api_control_proto_rawDescGZIP() []byte {
 var file_internal_api_control_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
 var file_internal_api_control_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
 var file_internal_api_control_proto_goTypes = []any{
-	(Signal_Kind)(0),       // 0: ship.v1.Signal.Kind
-	(SetMode_Kind)(0),      // 1: ship.v1.SetMode.Kind
-	(*ControlMessage)(nil), // 2: ship.v1.ControlMessage
-	(*Resize)(nil),         // 3: ship.v1.Resize
-	(*Signal)(nil),         // 4: ship.v1.Signal
-	(*SetMode)(nil),        // 5: ship.v1.SetMode
-	(*Demote)(nil),         // 6: ship.v1.Demote
-	(*ListClients)(nil),    // 7: ship.v1.ListClients
-	(*ClientList)(nil),     // 8: ship.v1.ClientList
-	(*ClientInfo)(nil),     // 9: ship.v1.ClientInfo
-	(*Promote)(nil),        // 10: ship.v1.Promote
-	(*Kick)(nil),           // 11: ship.v1.Kick
+	(Signal_Kind)(0),       // 0: mosey.v1.Signal.Kind
+	(SetMode_Kind)(0),      // 1: mosey.v1.SetMode.Kind
+	(*ControlMessage)(nil), // 2: mosey.v1.ControlMessage
+	(*Resize)(nil),         // 3: mosey.v1.Resize
+	(*Signal)(nil),         // 4: mosey.v1.Signal
+	(*SetMode)(nil),        // 5: mosey.v1.SetMode
+	(*Demote)(nil),         // 6: mosey.v1.Demote
+	(*ListClients)(nil),    // 7: mosey.v1.ListClients
+	(*ClientList)(nil),     // 8: mosey.v1.ClientList
+	(*ClientInfo)(nil),     // 9: mosey.v1.ClientInfo
+	(*Promote)(nil),        // 10: mosey.v1.Promote
+	(*Kick)(nil),           // 11: mosey.v1.Kick
 }
 var file_internal_api_control_proto_depIdxs = []int32{
-	3,  // 0: ship.v1.ControlMessage.resize:type_name -> ship.v1.Resize
-	4,  // 1: ship.v1.ControlMessage.signal:type_name -> ship.v1.Signal
-	5,  // 2: ship.v1.ControlMessage.set_mode:type_name -> ship.v1.SetMode
-	6,  // 3: ship.v1.ControlMessage.demote:type_name -> ship.v1.Demote
-	7,  // 4: ship.v1.ControlMessage.list_clients:type_name -> ship.v1.ListClients
-	8,  // 5: ship.v1.ControlMessage.client_list:type_name -> ship.v1.ClientList
-	10, // 6: ship.v1.ControlMessage.promote:type_name -> ship.v1.Promote
-	11, // 7: ship.v1.ControlMessage.kick:type_name -> ship.v1.Kick
-	0,  // 8: ship.v1.Signal.kind:type_name -> ship.v1.Signal.Kind
-	1,  // 9: ship.v1.SetMode.kind:type_name -> ship.v1.SetMode.Kind
-	9,  // 10: ship.v1.ClientList.clients:type_name -> ship.v1.ClientInfo
+	3,  // 0: mosey.v1.ControlMessage.resize:type_name -> mosey.v1.Resize
+	4,  // 1: mosey.v1.ControlMessage.signal:type_name -> mosey.v1.Signal
+	5,  // 2: mosey.v1.ControlMessage.set_mode:type_name -> mosey.v1.SetMode
+	6,  // 3: mosey.v1.ControlMessage.demote:type_name -> mosey.v1.Demote
+	7,  // 4: mosey.v1.ControlMessage.list_clients:type_name -> mosey.v1.ListClients
+	8,  // 5: mosey.v1.ControlMessage.client_list:type_name -> mosey.v1.ClientList
+	10, // 6: mosey.v1.ControlMessage.promote:type_name -> mosey.v1.Promote
+	11, // 7: mosey.v1.ControlMessage.kick:type_name -> mosey.v1.Kick
+	0,  // 8: mosey.v1.Signal.kind:type_name -> mosey.v1.Signal.Kind
+	1,  // 9: mosey.v1.SetMode.kind:type_name -> mosey.v1.SetMode.Kind
+	9,  // 10: mosey.v1.ClientList.clients:type_name -> mosey.v1.ClientInfo
 	11, // [11:11] is the sub-list for method output_type
 	11, // [11:11] is the sub-list for method input_type
 	11, // [11:11] is the sub-list for extension type_name

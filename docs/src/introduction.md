@@ -41,7 +41,7 @@ depends on the same protocol IDs documented here.
   it's a deliberate-co-pilot tool, not a CRDT — bytes arrive in the
   order the kernel scheduled the writes.
 - **Not a rendezvous-free protocol.** Two peers need to learn each
-  other's libp2p multiaddr somehow. mosey doesn't ship a
+  other's libp2p multiaddr somehow. mosey doesn't include a
   discovery layer; the calling project supplies the endpoint
   string.
 

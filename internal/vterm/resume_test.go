@@ -15,9 +15,9 @@ import (
 )
 
 // TestPTYResume_ReplaysFromZeroEqualsRegularAttach opens a
-// /ship/pty-resume/ stream with resume_seq=0 and asserts the
+// /mosey/pty-resume/ stream with resume_seq=0 and asserts the
 // client receives the same retained-ring replay it would get over
-// /ship/pty/. Mostly a wire-shape smoke (varint header is read
+// /mosey/pty/. Mostly a wire-shape smoke (varint header is read
 // without breaking the stream).
 func TestPTYResume_ReplaysFromZeroEqualsRegularAttach(t *testing.T) {
 	t.Parallel()

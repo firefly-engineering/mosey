@@ -1,4 +1,4 @@
-// Package auth runs ship's application-layer authentication
+// Package auth runs mosey's application-layer authentication
 // handshake on top of any [transport.Transport].
 //
 // The transport itself provides confidentiality + integrity (libp2p
@@ -19,7 +19,7 @@ import (
 	"io"
 )
 
-// Authenticator runs ship's authentication handshake from each side
+// Authenticator runs mosey's authentication handshake from each side
 // of a freshly opened [api.ProtoAuth] stream. Successful handshakes
 // produce an [Identity] — backends that don't distinguish identities
 // (e.g. a single-secret PSK) return an Identity with full Owner

@@ -13,15 +13,15 @@ import (
 
 // Wrap returns a [transport.Transport] that runs the supplied
 // [Authenticator] on every connection. Client-side: Dial first
-// opens /ship/auth/, drives ClientHandshake, then opens the
+// opens /mosey/auth/, drives ClientHandshake, then opens the
 // requested application protocol. Server-side: call [Wrapped.Serve]
-// once to install the /ship/auth/ listener; subsequent application
+// once to install the /mosey/auth/ listener; subsequent application
 // Handle calls are gated on a successful prior handshake from the
 // same remote peer (matched by [transport.Stream.RemoteID]).
 //
 // Streams returned to handlers carry the peer's [Identity] —
 // retrieve it via [IdentityOf]. Streams from a peer that hasn't
-// completed /ship/auth/ are silently closed.
+// completed /mosey/auth/ are silently closed.
 //
 // The returned [*Wrapped] is itself a [transport.Transport]; the
 // concrete type exposes Serve in addition.
@@ -81,7 +81,7 @@ func (w *Wrapped) Unhandle(proto string) {
 // ackOK is the one-byte "identity stored on the server, proceed
 // to open application streams" signal Serve() writes after a
 // successful handshake. Wrapped.Dial blocks on the read until it
-// arrives — without this, a fast client could open /ship/pty/
+// arrives — without this, a fast client could open /mosey/pty/
 // before the server's identity-map entry was visible, racing the
 // app stream's auth gate and getting rejected as unauthenticated.
 const ackOK byte = 0x01
@@ -102,7 +102,7 @@ const ackOK byte = 0x01
 func (w *Wrapped) Dial(ctx context.Context, endpoint, proto string) (transport.Stream, error) {
 	authStream, err := w.inner.Dial(ctx, endpoint, api.ProtoAuth)
 	if err != nil {
-		return nil, fmt.Errorf("ship/auth: open %s: %w", api.ProtoAuth, err)
+		return nil, fmt.Errorf(errPrefixAuth+"open %s: %w", api.ProtoAuth, err)
 	}
 	localID, err := w.auth.ClientHandshake(ctx, authStream)
 	if err != nil {
@@ -113,9 +113,9 @@ func (w *Wrapped) Dial(ctx context.Context, endpoint, proto string) (transport.S
 	if _, rerr := io.ReadFull(authStream, ack[:]); rerr != nil || ack[0] != ackOK {
 		_ = authStream.Close()
 		if rerr != nil {
-			return nil, fmt.Errorf("ship/auth: %w: server closed without ack: %v", ErrUnauthorized, rerr)
+			return nil, fmt.Errorf(errPrefixAuth+"%w: server closed without ack: %v", ErrUnauthorized, rerr)
 		}
-		return nil, fmt.Errorf("ship/auth: %w: server sent unexpected ack 0x%x", ErrUnauthorized, ack[0])
+		return nil, fmt.Errorf(errPrefixAuth+"%w: server sent unexpected ack 0x%x", ErrUnauthorized, ack[0])
 	}
 	_ = authStream.Close()
 
@@ -132,7 +132,7 @@ func (w *Wrapped) Dial(ctx context.Context, endpoint, proto string) (transport.S
 
 func (w *Wrapped) Close() error { return w.inner.Close() }
 
-// Serve installs the /ship/auth/ handler on the inner transport.
+// Serve installs the /mosey/auth/ handler on the inner transport.
 // Must be called once per wrapper before any inbound application
 // streams arrive (the wrapper's gated Handle silently drops
 // streams from unauthenticated peers; without Serve, every peer

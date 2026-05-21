@@ -20,7 +20,7 @@ func applyPTYSize(f *os.File, cols, rows uint32) error {
 	return pty.Setsize(f, &pty.Winsize{Cols: uint16(cols), Rows: uint16(rows)})
 }
 
-// readResumeSeq decodes the leading varint that a /ship/pty-resume/
+// readResumeSeq decodes the leading varint that a /mosey/pty-resume/
 // client sends as its first bytes. Mirrors protowire's varint
 // shape so the wire is stable.
 func readResumeSeq(r io.Reader) (uint64, error) {
@@ -83,7 +83,7 @@ type sessionClient struct {
 	identity auth.Identity
 
 	// remote is the auth-layer remote id captured at admit time.
-	// Used by control.go to map an inbound /ship/control/ stream
+	// Used by control.go to map an inbound /mosey/control/ stream
 	// back to the right sessionClient when recording its
 	// per-client geometry.
 	remote string
@@ -271,7 +271,7 @@ func (s *Session) recomputeGeometryAfterRemoveLocked() {
 // errResizeNoClient is the sentinel returned by
 // applyResizeForRemote when the resize comes from a remote that
 // has no matching PTY client — typically because the peer opened
-// a control stream without a corresponding /ship/pty/ session
+// a control stream without a corresponding /mosey/pty/ session
 // (a misbehaving client or a race during teardown).
 var errResizeNoClient = fmt.Errorf("resize: no PTY client for remote")
 

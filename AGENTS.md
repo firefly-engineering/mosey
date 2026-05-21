@@ -20,7 +20,7 @@ cmd/
   internal/certflags/    shared --cert/--key/--master-pub flag bundle
 internal/
   api/                   wire protos (auth, control, cert) + protocol IDs
-  attach/                client side: dial /ship/pty/, reconnect-with-replay
+  attach/                client side: dial /mosey/pty/, reconnect-with-replay
   auth/                  Authenticator interface, PSK + cert impls, Wrap()
   cert/                  Sign/Verify, revocation file, BIP-39 master
   streambuf/             OutputRing — sequence-tagged ring buffer for replay
@@ -57,11 +57,12 @@ plugin if you need to regenerate `internal/api/*.pb.go`.
   `internal/vterm/` use ephemeral local listeners. If a flake
   appears, root-cause it (the auth handshake had to grow a sync
   byte for exactly this reason — see `internal/auth/wrap.go`).
-- **Wire IDs are stable identifiers.** `/ship/auth/1.0.0`,
-  `/ship/pty/1.0.0`, the HKDF labels (`ship-cert-v1`,
-  `ship-cert-master`) — keep these spelled `ship`, even though the
-  binary is `mosey`. They're protocol identifiers, not branding;
-  rotating them silently breaks every workspace master ever minted.
+- **Wire IDs and HKDF labels are crypto-load-bearing.** Once a
+  workspace master is minted, `/mosey/auth/1.0.0`, `/mosey/pty/1.0.0`,
+  `mosey-cert-v1`, and `mosey-cert-master` are baked into key
+  derivation and protocol negotiation. Changing them silently breaks
+  every existing workspace; only touch them with a deliberate version
+  bump (and a migration story).
 
 ## Version Control — Jujutsu (jj)
 

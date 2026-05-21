@@ -29,7 +29,7 @@ func TestBackend_TLSRoundTrip(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	tlsConfig, err := selfSignedTLSConfig("ship-test")
+	tlsConfig, err := selfSignedTLSConfig("mosey-test")
 	if err != nil {
 		t.Fatalf("self-signed cert: %v", err)
 	}

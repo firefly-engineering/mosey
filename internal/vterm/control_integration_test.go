@@ -19,7 +19,7 @@ import (
 // a tiny shell loop that prints the terminal size on every SIGWINCH
 // (via `trap` + `stty size`), connects an attacher, opens the
 // control stream, sends a Resize, and asserts the new size appears
-// in the PTY output. End-to-end exercise of /ship/control/1.0.0 +
+// in the PTY output. End-to-end exercise of /mosey/control/1.0.0 +
 // the daemon-side TIOCSWINSZ wiring.
 func TestVterm_ResizeAppliesViaControlStream(t *testing.T) {
 	t.Parallel()

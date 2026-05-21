@@ -99,8 +99,8 @@ A compromised master means re-minting every cert and rotating
 `master.pub`.
 
 The mnemonic is BIP-39 — 24 words, recoverable via HKDF-SHA256 with
-the `ship-cert-master` context label. The HKDF labels are baked into
-verification, so changing them invalidates every existing key.
+the `mosey-cert-master` context label. The HKDF labels are baked
+into verification, so changing them invalidates every existing key.
 
 ### Revocation
 

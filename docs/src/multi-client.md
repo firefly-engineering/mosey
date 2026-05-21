@@ -2,7 +2,7 @@
 
 When more than one client attaches to a single vterm, the session
 needs a policy: who can type, who can resize, what happens to old
-clients when a new one shows up. mosey ships four such policies
+clients when a new one shows up. mosey offers four such policies
 (set via `mosey launch --mode=...` or `mosey control set-mode`).
 
 The mode applies only to the **dynamic** layer — every client still

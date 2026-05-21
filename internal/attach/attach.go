@@ -1,7 +1,7 @@
-// Package attach dials a ship vterm peer and bridges its PTY stream
-// to the local terminal.
+// Package attach dials a mosey vterm peer and bridges its PTY
+// stream to the local terminal.
 //
-// Stream lifecycle: open /ship/pty/ via the transport, copy bytes
+// Stream lifecycle: open /mosey/pty/ via the transport, copy bytes
 // both ways, restore the local TTY on exit. Terminal raw mode is
 // on so keystrokes flow through unmolested; the local process's
 // signal-handling (Ctrl-C, etc.) hands off to the remote PTY,
@@ -9,7 +9,7 @@
 //
 // On a non-fatal stream close (network blip, server-side eviction
 // that wasn't us asking) we don't bail — we open a fresh
-// /ship/pty-resume/ stream with the local last-rendered byte
+// /mosey/pty-resume/ stream with the local last-rendered byte
 // count, and the vterm replays any bytes we missed from its
 // OutputRing.
 package attach
@@ -29,6 +29,10 @@ import (
 	"github.com/firefly-engineering/mosey/internal/api"
 	"github.com/firefly-engineering/mosey/internal/transport"
 )
+
+// errPrefix tags errors emitted by this package. Shared by
+// attach.go and control.go so both surfaces attribute consistently.
+const errPrefix = "mosey/attach: "
 
 // reconnectInitialDelay / Max bound the exponential backoff used
 // by the resume loop. Real failures (auth rejected, bad endpoint)
@@ -58,16 +62,16 @@ type Options struct {
 	Stderr io.Writer
 }
 
-// Run dials Target, opens the /ship/pty stream, and blocks until
+// Run dials Target, opens the /mosey/pty stream, and blocks until
 // ctx is cancelled or the session ends fatally. Reconnects across
-// transient stream closures using /ship/pty-resume/ so a brief
+// transient stream closures using /mosey/pty-resume/ so a brief
 // network blip doesn't black-screen the user.
 func Run(ctx context.Context, opts Options) error {
 	if opts.Transport == nil {
-		return errors.New("ship/attach: Options.Transport required")
+		return errors.New(errPrefix + "Options.Transport required")
 	}
 	if opts.Target == "" {
-		return errors.New("ship/attach: Options.Target required")
+		return errors.New(errPrefix + "Options.Target required")
 	}
 	logger := opts.Logger
 	if logger == nil {
@@ -104,18 +108,18 @@ func Run(ctx context.Context, opts Options) error {
 	if f, ok := stdin.(*os.File); ok && term.IsTerminal(int(f.Fd())) {
 		state, err := term.MakeRaw(int(f.Fd()))
 		if err != nil {
-			return fmt.Errorf("ship/attach: make raw: %w", err)
+			return fmt.Errorf(errPrefix+"make raw: %w", err)
 		}
 		defer func() { _ = term.Restore(int(f.Fd()), state) }()
 	}
 
 	// Tracks the last byte we've rendered on local stdout. On
-	// reconnect we pass this to /ship/pty-resume/ so the vterm
+	// reconnect we pass this to /mosey/pty-resume/ so the vterm
 	// replays anything we missed during the dropout.
 	var renderedBytes atomic.Uint64
 
-	// First connect uses /ship/pty/; subsequent reconnects use
-	// /ship/pty-resume/ with the accumulated seq.
+	// First connect uses /mosey/pty/; subsequent reconnects use
+	// /mosey/pty-resume/ with the accumulated seq.
 	proto := api.ProtoPTY
 	delay := reconnectInitialDelay
 	for {
@@ -125,7 +129,7 @@ func Run(ctx context.Context, opts Options) error {
 			if isFatalDialError(err) || ctx.Err() != nil {
 				return err
 			}
-			logger.Warn("ship/attach: dial failed, retrying", "err", err, "in", delay)
+			logger.Warn(errPrefix+"dial failed, retrying", "err", err, "in", delay)
 			if waitForDelayOrCtx(ctx, delay) != nil {
 				return ctx.Err()
 			}
@@ -144,7 +148,7 @@ func Run(ctx context.Context, opts Options) error {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		logger.Warn("ship/attach: stream ended, reconnecting", "err", err, "resume_seq", renderedBytes.Load())
+		logger.Warn(errPrefix+"stream ended, reconnecting", "err", err, "resume_seq", renderedBytes.Load())
 		proto = api.ProtoPTYResume
 	}
 }
@@ -155,12 +159,12 @@ func Run(ctx context.Context, opts Options) error {
 func dialPTY(ctx context.Context, tr transport.Transport, target, proto string, resumeSeq uint64) (transport.Stream, error) {
 	stream, err := tr.Dial(ctx, target, proto)
 	if err != nil {
-		return nil, fmt.Errorf("ship/attach: open %s: %w", proto, err)
+		return nil, fmt.Errorf(errPrefix+"open %s: %w", proto, err)
 	}
 	if proto == api.ProtoPTYResume {
 		if _, err := stream.Write(encodeVarint(resumeSeq)); err != nil {
 			_ = stream.Close()
-			return nil, fmt.Errorf("ship/attach: send resume header: %w", err)
+			return nil, fmt.Errorf(errPrefix+"send resume header: %w", err)
 		}
 	}
 	return stream, nil

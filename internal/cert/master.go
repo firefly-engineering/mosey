@@ -20,12 +20,12 @@ const masterMnemonicEntropyBits = 256
 // derivation. Empty = "no passphrase," the conventional default.
 // We pin it to a domain-separated label so this seed can't be
 // confused with a BIP-39 wallet seed using the same mnemonic.
-const mnemonicSeedPassphrase = "ship-cert-v1"
+const mnemonicSeedPassphrase = "mosey-cert-v1"
 
 // masterSeedInfo is folded in after the BIP-39 seed → final
 // Ed25519 seed reduction so a leaked 32-byte seed can't be
-// trivially repurposed for non-ship Ed25519 use.
-const masterSeedInfo = "ship-cert-master"
+// trivially repurposed for non-mosey Ed25519 use.
+const masterSeedInfo = "mosey-cert-master"
 
 // NewMasterMnemonic generates a fresh BIP-39 mnemonic. Returns
 // the mnemonic phrase plus the derived [ed25519.PrivateKey]. The

@@ -1,8 +1,8 @@
-// Package cert is the ship workspace-certificate library: build
+// Package cert is the mosey workspace-certificate library: build
 // signed claims that the workspace master vouches for an agent's
 // identity + capabilities, and verify them against the master's
 // public key. Lives in its own package so the auth Authenticator
-// backend and the ship-cert CLI share one set of primitives.
+// backend and the `mosey cert` CLI share one set of primitives.
 //
 // Cryptographic choices: Ed25519 for both the master key and the
 // per-agent peer keys (consistent with libp2p, well-understood,

@@ -1,5 +1,5 @@
-// ship's application-layer authentication handshake. Carried on
-// the libp2p stream `/ship/auth/1.0.0` as length-delimited
+// mosey's application-layer authentication handshake. Carried on
+// the libp2p stream `/mosey/auth/1.0.0` as length-delimited
 // [AuthMessage] envelopes. The underlying transport already
 // provides confidentiality + integrity (libp2p Noise, TLS, etc.);
 // this exchange just proves both parties hold the workspace's
@@ -11,8 +11,8 @@
 //   2. Server → Client: ServerProof { nonce_s, mac_s }
 //   3. Client → Server: ClientProof { mac_c }
 //
-//   mac_s = HMAC(secret, "ship-auth-v1:S" || nonce_c || nonce_s)
-//   mac_c = HMAC(secret, "ship-auth-v1:C" || nonce_s || nonce_c)
+//   mac_s = HMAC(secret, "mosey-auth-v1:S" || nonce_c || nonce_s)
+//   mac_c = HMAC(secret, "mosey-auth-v1:C" || nonce_s || nonce_c)
 //
 // Direction-specific MAC strings stop a passive attacker that
 // observes one direction's MAC from replaying it in the other.
@@ -307,11 +307,11 @@ var File_internal_api_auth_proto protoreflect.FileDescriptor
 
 const file_internal_api_auth_proto_rawDesc = "" +
 	"\n" +
-	"\x17internal/api/auth.proto\x12\aship.v1\"\xc6\x01\n" +
-	"\vAuthMessage\x129\n" +
-	"\fclient_hello\x18\x01 \x01(\v2\x14.ship.v1.ClientHelloH\x00R\vclientHello\x129\n" +
-	"\fserver_proof\x18\x02 \x01(\v2\x14.ship.v1.ServerProofH\x00R\vserverProof\x129\n" +
-	"\fclient_proof\x18\x03 \x01(\v2\x14.ship.v1.ClientProofH\x00R\vclientProofB\x06\n" +
+	"\x17internal/api/auth.proto\x12\bmosey.v1\"\xc9\x01\n" +
+	"\vAuthMessage\x12:\n" +
+	"\fclient_hello\x18\x01 \x01(\v2\x15.mosey.v1.ClientHelloH\x00R\vclientHello\x12:\n" +
+	"\fserver_proof\x18\x02 \x01(\v2\x15.mosey.v1.ServerProofH\x00R\vserverProof\x12:\n" +
+	"\fclient_proof\x18\x03 \x01(\v2\x15.mosey.v1.ClientProofH\x00R\vclientProofB\x06\n" +
 	"\x04kind\"9\n" +
 	"\vClientHello\x12\x14\n" +
 	"\x05nonce\x18\x01 \x01(\fR\x05nonce\x12\x14\n" +
@@ -336,15 +336,15 @@ func file_internal_api_auth_proto_rawDescGZIP() []byte {
 
 var file_internal_api_auth_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
 var file_internal_api_auth_proto_goTypes = []any{
-	(*AuthMessage)(nil), // 0: ship.v1.AuthMessage
-	(*ClientHello)(nil), // 1: ship.v1.ClientHello
-	(*ServerProof)(nil), // 2: ship.v1.ServerProof
-	(*ClientProof)(nil), // 3: ship.v1.ClientProof
+	(*AuthMessage)(nil), // 0: mosey.v1.AuthMessage
+	(*ClientHello)(nil), // 1: mosey.v1.ClientHello
+	(*ServerProof)(nil), // 2: mosey.v1.ServerProof
+	(*ClientProof)(nil), // 3: mosey.v1.ClientProof
 }
 var file_internal_api_auth_proto_depIdxs = []int32{
-	1, // 0: ship.v1.AuthMessage.client_hello:type_name -> ship.v1.ClientHello
-	2, // 1: ship.v1.AuthMessage.server_proof:type_name -> ship.v1.ServerProof
-	3, // 2: ship.v1.AuthMessage.client_proof:type_name -> ship.v1.ClientProof
+	1, // 0: mosey.v1.AuthMessage.client_hello:type_name -> mosey.v1.ClientHello
+	2, // 1: mosey.v1.AuthMessage.server_proof:type_name -> mosey.v1.ServerProof
+	3, // 2: mosey.v1.AuthMessage.client_proof:type_name -> mosey.v1.ClientProof
 	3, // [3:3] is the sub-list for method output_type
 	3, // [3:3] is the sub-list for method input_type
 	3, // [3:3] is the sub-list for extension type_name

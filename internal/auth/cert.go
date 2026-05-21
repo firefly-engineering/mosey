@@ -24,7 +24,13 @@ const certNonceSize = 32
 // certProofLabel is folded into the bytes the peer signs so a
 // signature over the auth nonce can't be replayed as a signature
 // over something else.
-const certProofLabel = "ship-cert-v1"
+const certProofLabel = "mosey-cert-v1"
+
+// errPrefixCert is the leading tag on every error this file emits.
+// Keeps subsystem attribution consistent without repeating the
+// literal at every fmt.Errorf site. Sibling files in the auth
+// package carry their own prefix constants.
+const errPrefixCert = "mosey/auth(cert): "
 
 // CertAuth is an [Authenticator] backed by a workspace master key
 // + per-agent certs. Mutual cert exchange + nonce challenge proves
@@ -77,16 +83,16 @@ type CertAuthOptions struct {
 // surface at construction rather than first-connect.
 func NewCertAuth(opts CertAuthOptions) (*CertAuth, error) {
 	if opts.LocalCert == nil {
-		return nil, errors.New("ship/auth(cert): LocalCert required")
+		return nil, errors.New(errPrefixCert + "LocalCert required")
 	}
 	if len(opts.LocalPriv) != ed25519.PrivateKeySize {
-		return nil, fmt.Errorf("ship/auth(cert): LocalPriv length %d, want %d", len(opts.LocalPriv), ed25519.PrivateKeySize)
+		return nil, fmt.Errorf(errPrefixCert+"LocalPriv length %d, want %d", len(opts.LocalPriv), ed25519.PrivateKeySize)
 	}
 	if len(opts.MasterPub) != ed25519.PublicKeySize {
-		return nil, fmt.Errorf("ship/auth(cert): MasterPub length %d, want %d", len(opts.MasterPub), ed25519.PublicKeySize)
+		return nil, fmt.Errorf(errPrefixCert+"MasterPub length %d, want %d", len(opts.MasterPub), ed25519.PublicKeySize)
 	}
 	if opts.WorkspaceID == "" {
-		return nil, errors.New("ship/auth(cert): WorkspaceID required")
+		return nil, errors.New(errPrefixCert + "WorkspaceID required")
 	}
 	claim, err := cert.Verify(opts.LocalCert, cert.VerifyOptions{
 		MasterPub:   opts.MasterPub,
@@ -94,13 +100,13 @@ func NewCertAuth(opts CertAuthOptions) (*CertAuth, error) {
 		Revoked:     opts.Revoked,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("ship/auth(cert): local cert invalid: %w", err)
+		return nil, fmt.Errorf(errPrefixCert+"local cert invalid: %w", err)
 	}
 	// Sanity check: peer_pubkey in cert must match the public half
 	// of localPriv. Otherwise the nonce-signing step on the peer's
 	// side won't validate.
 	if !pubKeyMatches(claim.PeerPubKey, opts.LocalPriv) {
-		return nil, errors.New("ship/auth(cert): LocalPriv does not match LocalCert.peer_pubkey")
+		return nil, errors.New(errPrefixCert + "LocalPriv does not match LocalCert.peer_pubkey")
 	}
 
 	revoked := map[string]struct{}{}
@@ -157,7 +163,7 @@ func (c *CertAuth) ServerHandshake(_ context.Context, stream io.ReadWriteCloser)
 func (c *CertAuth) runHandshake(stream io.ReadWriteCloser, clientFirst bool) (Identity, error) {
 	myNonce := make([]byte, certNonceSize)
 	if _, err := rand.Read(myNonce); err != nil {
-		return Identity{}, fmt.Errorf("ship/auth(cert): nonce: %w", err)
+		return Identity{}, fmt.Errorf(errPrefixCert+"nonce: %w", err)
 	}
 
 	helloOut := &api.CertHandshakeMessage{
@@ -172,7 +178,7 @@ func (c *CertAuth) runHandshake(stream io.ReadWriteCloser, clientFirst bool) (Id
 	)
 	if clientFirst {
 		if err = writeCertMsg(stream, helloOut); err != nil {
-			return Identity{}, fmt.Errorf("ship/auth(cert): send hello: %w", err)
+			return Identity{}, fmt.Errorf(errPrefixCert+"send hello: %w", err)
 		}
 		peerHello, err = readCertHello(stream)
 		if err != nil {
@@ -184,7 +190,7 @@ func (c *CertAuth) runHandshake(stream io.ReadWriteCloser, clientFirst bool) (Id
 			return Identity{}, err
 		}
 		if err = writeCertMsg(stream, helloOut); err != nil {
-			return Identity{}, fmt.Errorf("ship/auth(cert): send hello: %w", err)
+			return Identity{}, fmt.Errorf(errPrefixCert+"send hello: %w", err)
 		}
 	}
 
@@ -194,10 +200,10 @@ func (c *CertAuth) runHandshake(stream io.ReadWriteCloser, clientFirst bool) (Id
 		Revoked:     c.revokedSnapshot(),
 	})
 	if err != nil {
-		return Identity{}, fmt.Errorf("ship/auth(cert): peer cert: %w: %w", ErrUnauthorized, err)
+		return Identity{}, fmt.Errorf(errPrefixCert+"peer cert: %w: %w", ErrUnauthorized, err)
 	}
 	if len(peerHello.GetNonce()) != certNonceSize {
-		return Identity{}, fmt.Errorf("ship/auth(cert): %w: peer nonce length %d", ErrUnauthorized, len(peerHello.GetNonce()))
+		return Identity{}, fmt.Errorf(errPrefixCert+"%w: peer nonce length %d", ErrUnauthorized, len(peerHello.GetNonce()))
 	}
 
 	// Sign the PEER's nonce and send our SignedNonce.
@@ -211,7 +217,7 @@ func (c *CertAuth) runHandshake(stream io.ReadWriteCloser, clientFirst bool) (Id
 	var peerProof *api.SignedNonce
 	if clientFirst {
 		if err = writeCertMsg(stream, proofOut); err != nil {
-			return Identity{}, fmt.Errorf("ship/auth(cert): send proof: %w", err)
+			return Identity{}, fmt.Errorf(errPrefixCert+"send proof: %w", err)
 		}
 		peerProof, err = readCertProof(stream)
 		if err != nil {
@@ -223,7 +229,7 @@ func (c *CertAuth) runHandshake(stream io.ReadWriteCloser, clientFirst bool) (Id
 			return Identity{}, err
 		}
 		if err = writeCertMsg(stream, proofOut); err != nil {
-			return Identity{}, fmt.Errorf("ship/auth(cert): send proof: %w", err)
+			return Identity{}, fmt.Errorf(errPrefixCert+"send proof: %w", err)
 		}
 	}
 
@@ -231,7 +237,7 @@ func (c *CertAuth) runHandshake(stream io.ReadWriteCloser, clientFirst bool) (Id
 	// declared peer_pubkey.
 	signedBytes := append([]byte(certProofLabel), myNonce...)
 	if !ed25519.Verify(peerClaim.PeerPubKey, signedBytes, peerProof.GetSignature()) {
-		return Identity{}, fmt.Errorf("ship/auth(cert): %w: peer proof signature invalid", ErrUnauthorized)
+		return Identity{}, fmt.Errorf(errPrefixCert+"%w: peer proof signature invalid", ErrUnauthorized)
 	}
 
 	return claimToIdentity(peerClaim), nil
@@ -287,11 +293,11 @@ func readCertMsg(r io.Reader, msg *api.CertHandshakeMessage) error {
 func readCertHello(r io.Reader) (*api.CertHello, error) {
 	var msg api.CertHandshakeMessage
 	if err := readCertMsg(r, &msg); err != nil {
-		return nil, fmt.Errorf("ship/auth(cert): read hello: %w", err)
+		return nil, fmt.Errorf(errPrefixCert+"read hello: %w", err)
 	}
 	hello := msg.GetHello()
 	if hello == nil {
-		return nil, fmt.Errorf("ship/auth(cert): %w: expected CertHello, got %T", ErrUnauthorized, msg.GetPayload())
+		return nil, fmt.Errorf(errPrefixCert+"%w: expected CertHello, got %T", ErrUnauthorized, msg.GetPayload())
 	}
 	return hello, nil
 }
@@ -299,11 +305,11 @@ func readCertHello(r io.Reader) (*api.CertHello, error) {
 func readCertProof(r io.Reader) (*api.SignedNonce, error) {
 	var msg api.CertHandshakeMessage
 	if err := readCertMsg(r, &msg); err != nil {
-		return nil, fmt.Errorf("ship/auth(cert): read proof: %w", err)
+		return nil, fmt.Errorf(errPrefixCert+"read proof: %w", err)
 	}
 	proof := msg.GetProof()
 	if proof == nil {
-		return nil, fmt.Errorf("ship/auth(cert): %w: expected SignedNonce, got %T", ErrUnauthorized, msg.GetPayload())
+		return nil, fmt.Errorf(errPrefixCert+"%w: expected SignedNonce, got %T", ErrUnauthorized, msg.GetPayload())
 	}
 	return proof, nil
 }

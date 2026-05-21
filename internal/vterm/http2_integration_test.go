@@ -15,8 +15,8 @@ import (
 
 // TestVterm_HTTP2_AttachRoundTrip is the libp2p AttachRoundTrip
 // test ported to the h2c backend. End-to-end exercise of the new
-// transport: auth handshake on /ship/auth/, PTY bytes through
-// /ship/pty/, all over a single HTTP/2 TCP connection.
+// transport: auth handshake on /mosey/auth/, PTY bytes through
+// /mosey/pty/, all over a single HTTP/2 TCP connection.
 func TestVterm_HTTP2_AttachRoundTrip(t *testing.T) {
 	t.Parallel()
 

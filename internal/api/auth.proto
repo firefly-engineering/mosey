@@ -1,5 +1,5 @@
-// ship's application-layer authentication handshake. Carried on
-// the libp2p stream `/ship/auth/1.0.0` as length-delimited
+// mosey's application-layer authentication handshake. Carried on
+// the libp2p stream `/mosey/auth/1.0.0` as length-delimited
 // [AuthMessage] envelopes. The underlying transport already
 // provides confidentiality + integrity (libp2p Noise, TLS, etc.);
 // this exchange just proves both parties hold the workspace's
@@ -11,15 +11,15 @@
 //   2. Server → Client: ServerProof { nonce_s, mac_s }
 //   3. Client → Server: ClientProof { mac_c }
 //
-//   mac_s = HMAC(secret, "ship-auth-v1:S" || nonce_c || nonce_s)
-//   mac_c = HMAC(secret, "ship-auth-v1:C" || nonce_s || nonce_c)
+//   mac_s = HMAC(secret, "mosey-auth-v1:S" || nonce_c || nonce_s)
+//   mac_c = HMAC(secret, "mosey-auth-v1:C" || nonce_s || nonce_c)
 //
 // Direction-specific MAC strings stop a passive attacker that
 // observes one direction's MAC from replaying it in the other.
 // Random nonces stop replay of an entire transcript.
 syntax = "proto3";
 
-package ship.v1;
+package mosey.v1;
 
 option go_package = "github.com/firefly-engineering/mosey/internal/api;api";
 

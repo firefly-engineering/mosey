@@ -6,36 +6,37 @@ follows libp2p convention:
 
 | Protocol ID | Direction | Purpose |
 |---|---|---|
-| `/ship/auth/1.0.0` | client → server (then bidi) | Handshake. Three messages prove both peers hold the credential. |
-| `/ship/pty/1.0.0` | bidi | The PTY byte stream itself. |
-| `/ship/pty-resume/1.0.0` | bidi | Reattach with replay. First message is a varint `last_seq`. |
-| `/ship/control/1.0.0` | bidi | Length-delimited typed messages: Resize, Signal, SetMode, Promote, Kick, Demote, ListClients. |
+| `/mosey/auth/1.0.0` | client → server (then bidi) | Handshake. Three messages prove both peers hold the credential. |
+| `/mosey/pty/1.0.0` | bidi | The PTY byte stream itself. |
+| `/mosey/pty-resume/1.0.0` | bidi | Reattach with replay. First message is a varint `last_seq`. |
+| `/mosey/control/1.0.0` | bidi | Length-delimited typed messages: Resize, Signal, SetMode, Promote, Kick, Demote, ListClients. |
 
-The IDs are intentionally spelled `ship/...` even though the binary
-is now `mosey` — they're stable wire identifiers and rotating them
-silently breaks every workspace master ever minted (the HKDF
-context labels embed `ship-cert-v1` for the same reason). See
-[AGENTS.md](../../AGENTS.md#conventions) for the rationale.
+The protocol IDs — and the HKDF context labels (`mosey-cert-v1`,
+`mosey-cert-master`) used in cert + master-key derivation — are
+load-bearing for the wire format and for every workspace master
+ever generated. Bumping the trailing version number is the
+sanctioned way to change them; the constants live in
+`internal/api/protocols.go` and `internal/cert/master.go`.
 
 ## Protocol lifecycle
 
 ```
                        ┌──── client ────┐                ┌──── server ────┐
                        │                │                │                │
-   Dial(target)  ──────┼──> /ship/auth/ │                │                │
+   Dial(target)  ──────┼──> /mosey/auth/ │                │                │
                        │     HMAC-SHA256 challenge / response (3 msgs)    │
                        │                ├────────────────┤  Identity +    │
                        │                │                │  Capabilities  │
                        │                │                │  stored        │
                        │   ackOK byte   ├────────────────┤                │
                        │                │                │                │
-   Dial(target, PROTO) ─┼──> /ship/pty/ ─┼──> handler sees authed Stream  │
+   Dial(target, PROTO) ─┼──> /mosey/pty/ ─┼──> handler sees authed Stream  │
                        │  application bytes flow ↔                       │
                        └────────────────┘                └────────────────┘
 ```
 
 The `ackOK` byte is the synchronization gate. Without it the client
-could race ahead and open `/ship/pty/` before the server has
+could race ahead and open `/mosey/pty/` before the server has
 finished writing the [`Identity`] into its session table; the
 handler would then run with an empty capability set. See
 `internal/auth/wrap.go` for the gory details.
@@ -47,10 +48,10 @@ handler would then run with an empty capability set. See
 `auth.Wrap(transport, authenticator)` returns a `Transport` that
 behaves identically to the inner one except:
 
-1. `Serve()` registers `/ship/auth/` on the inner transport.
+1. `Serve()` registers `/mosey/auth/` on the inner transport.
 2. `Dial(target, PROTO)` always runs the handshake before opening
    `PROTO`.
-3. Inbound streams on `PROTO != /ship/auth/` are silently closed
+3. Inbound streams on `PROTO != /mosey/auth/` are silently closed
    unless a prior handshake from the same remote completed
    successfully.
 
@@ -69,7 +70,7 @@ client's outbound buffer.
 That indirection buys two properties:
 
 - **Replay.** Each byte the ring stores is tagged with a sequence
-  number. When a client reattaches via `/ship/pty-resume/`, it
+  number. When a client reattaches via `/mosey/pty-resume/`, it
   sends the last sequence it rendered locally; the server replays
   from there. The ring is bounded — old data is overwritten — so
   replay is best-effort. See [reattach](reattach.md).
@@ -100,7 +101,7 @@ client but never produces nonsense.
 
 ## Out-of-band: the control channel
 
-`/ship/control/` carries length-delimited
+`/mosey/control/` carries length-delimited
 [`ControlMessage`](../../internal/api/control.proto) envelopes. v1
 messages all flow attach → vterm and are fire-and-forget except
 `ListClients`, which replies with `ClientList` on the same stream.
@@ -115,7 +116,7 @@ client would simply ignore it anyway.
 
 ## Why two transports?
 
-mosey ships **libp2p** and **HTTP/2** backends behind one
+mosey carries **libp2p** and **HTTP/2** backends behind one
 `transport.Transport` interface, aggregated by `transport.Multi`.
 
 - **libp2p** is the production cross-host transport — handles

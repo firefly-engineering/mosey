@@ -96,7 +96,7 @@ func TestBackend_RoundTrip(t *testing.T) {
 // TestBackend_UnregisteredProtocolReturnsError verifies the server
 // rejects unknown protocols with a 404 → wrapped error on the
 // client side. Mirrors libp2p's "protocol not supported" behavior
-// so the attach-side fallback for missing /ship/control/ keeps
+// so the attach-side fallback for missing /mosey/control/ keeps
 // working with this backend too.
 func TestBackend_UnregisteredProtocolReturnsError(t *testing.T) {
 	t.Parallel()

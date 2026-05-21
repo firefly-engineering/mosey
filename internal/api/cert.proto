@@ -1,16 +1,16 @@
-// ship workspace certificate format. Used by [internal/auth.CertAuth]
-// to prove an agent's identity + capabilities are vouched for by
-// the workspace master keypair. The master signs the
-// [SignedCertContent] payload; the resulting `signature` is what
-// peers verify against the master's public key.
+// mosey workspace certificate format. Used by
+// [internal/auth.CertAuth] to prove an agent's identity +
+// capabilities are vouched for by the workspace master keypair.
+// The master signs the [SignedCertContent] payload; the resulting
+// `signature` is what peers verify against the master's public key.
 //
 // Wire shape: a [Cert] is one length-delimited frame on the
-// /ship/auth/ stream when the CertAuth backend is in use. The
+// /mosey/auth/ stream when the CertAuth backend is in use. The
 // payload bytes are stable: serialize SignedCertContent with
 // protobuf's deterministic option before signing / verifying.
 syntax = "proto3";
 
-package ship.v1;
+package mosey.v1;
 
 option go_package = "github.com/firefly-engineering/mosey/internal/api;api";
 
@@ -65,7 +65,7 @@ message SignedCertContent {
   string workspace_id = 8;
 }
 
-// CertHandshakeMessage is the wire envelope on /ship/auth/ when
+// CertHandshakeMessage is the wire envelope on /mosey/auth/ when
 // CertAuth is in use. The flow is symmetric: each side sends a
 // CertHello with its cert, then a SignedNonce as proof of private-
 // key control over the cert's declared peer_pubkey.
@@ -84,7 +84,7 @@ message CertHello {
 }
 
 // SignedNonce is the sender's Ed25519 signature over
-// "ship-cert-v1" || peer_nonce. The peer verifies against the
+// "mosey-cert-v1" || peer_nonce. The peer verifies against the
 // sender's cert.peer_pubkey.
 message SignedNonce {
   bytes signature = 1;

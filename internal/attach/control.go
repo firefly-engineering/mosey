@@ -30,7 +30,7 @@ type controlClient struct {
 	closed bool
 }
 
-// newControlClient opens /ship/control/ on tr against target and
+// newControlClient opens /mosey/control/ on tr against target and
 // returns a controlClient. Returns nil + nil error when control
 // is unavailable on the remote (e.g. a v0 vterm) — the caller
 // should still attach the PTY in that case, just without size /
@@ -45,7 +45,7 @@ func newControlClient(ctx context.Context, tr transport.Transport, target string
 			logger.Info("control protocol not advertised by peer; running without resize / signal forwarding")
 			return nil, nil
 		}
-		return nil, fmt.Errorf("ship/attach: open %s: %w", api.ProtoControl, err)
+		return nil, fmt.Errorf(errPrefix+"open %s: %w", api.ProtoControl, err)
 	}
 	return &controlClient{logger: logger, stream: stream}, nil
 }
@@ -140,7 +140,7 @@ func watchSIGWINCH(ctx context.Context, stdin io.Reader, control *controlClient,
 
 // isProtocolNotSupported reports whether err is libp2p's "protocol
 // not supported" — used to fall back gracefully when the remote
-// doesn't speak /ship/control/.
+// doesn't speak /mosey/control/.
 func isProtocolNotSupported(err error) bool {
 	if err == nil {
 		return false

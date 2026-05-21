@@ -1,11 +1,11 @@
-// Package libp2p is the libp2p backend for ship's [transport.Transport].
-// It speaks the "libp2p://..." (or bare "/ip4/..." multiaddr)
-// scheme. Identity = a fresh Ed25519 key per Backend (Options.Identity
-// to persist); listeners default to TCP+QUIC on all interfaces; NAT
-// hole-punching + AutoRelay default on, with IPFS public bootstrap
-// providing the relay swarm.
+// Package libp2p is the libp2p backend for mosey's
+// [transport.Transport]. It speaks the "libp2p://..." (or bare
+// "/ip4/..." multiaddr) scheme. Identity = a fresh Ed25519 key per
+// Backend (Options.Identity to persist); listeners default to
+// TCP+QUIC on all interfaces; NAT hole-punching + AutoRelay default
+// on, with IPFS public bootstrap providing the relay swarm.
 //
-// Authentication lives one level up (ship's application-layer
+// Authentication lives one level up (mosey's application-layer
 // handshake on [api.ProtoAuth]) — this backend is plain libp2p
 // with DefaultTransports, so QUIC is in play and DCUtR
 // hole-punching actually works across NATs.

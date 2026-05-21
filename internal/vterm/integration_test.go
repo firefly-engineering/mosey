@@ -22,7 +22,7 @@ import (
 // and a separate attach host on the same loopback interface, then
 // drives bytes through the bidi PTY pipe and asserts they round-
 // trip back. Exercises the full stack: PSK auth, libp2p TCP
-// transport, /ship/pty stream handler, PTY ownership.
+// transport, /mosey/pty stream handler, PTY ownership.
 func TestVterm_AttachRoundTrip(t *testing.T) {
 	t.Parallel()
 
@@ -36,7 +36,7 @@ func TestVterm_AttachRoundTrip(t *testing.T) {
 	defer cancel()
 
 	// Host A: the vterm. Wrap the libp2p backend in auth so every
-	// inbound stream goes through the /ship/auth/ handshake.
+	// inbound stream goes through the /mosey/auth/ handshake.
 	vtermBackend, err := libp2pbackend.New(ctx, libp2pbackend.Options{
 		Bootstrap: []peer.AddrInfo{},
 	})
@@ -91,22 +91,22 @@ func TestVterm_AttachRoundTrip(t *testing.T) {
 	}()
 
 	// Send a line, wait for cat to echo it back via the PTY.
-	const sent = "hello-ship\n"
+	const sent = "hello-mosey\n"
 	if _, err := stdinW.Write([]byte(sent)); err != nil {
 		t.Fatalf("write stdin: %v", err)
 	}
 
 	// PTY in cooked mode echoes input + appends the cat output. So
-	// we expect to see at least "hello-ship" come back on stdout.
+	// we expect to see at least "hello-mosey" come back on stdout.
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
-		if strings.Contains(stdout.String(), "hello-ship") {
+		if strings.Contains(stdout.String(), "hello-mosey") {
 			break
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
-	if !strings.Contains(stdout.String(), "hello-ship") {
-		t.Fatalf("expected %q to appear in attach stdout, got:\n%q", "hello-ship", stdout.String())
+	if !strings.Contains(stdout.String(), "hello-mosey") {
+		t.Fatalf("expected %q to appear in attach stdout, got:\n%q", "hello-mosey", stdout.String())
 	}
 
 	// Closing stdin makes cat exit (it's reading from the PTY which

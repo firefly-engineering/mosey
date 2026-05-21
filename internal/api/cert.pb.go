@@ -1,11 +1,11 @@
-// ship workspace certificate format. Used by [internal/auth.CertAuth]
-// to prove an agent's identity + capabilities are vouched for by
-// the workspace master keypair. The master signs the
-// [SignedCertContent] payload; the resulting `signature` is what
-// peers verify against the master's public key.
+// mosey workspace certificate format. Used by
+// [internal/auth.CertAuth] to prove an agent's identity +
+// capabilities are vouched for by the workspace master keypair.
+// The master signs the [SignedCertContent] payload; the resulting
+// `signature` is what peers verify against the master's public key.
 //
 // Wire shape: a [Cert] is one length-delimited frame on the
-// /ship/auth/ stream when the CertAuth backend is in use. The
+// /mosey/auth/ stream when the CertAuth backend is in use. The
 // payload bytes are stable: serialize SignedCertContent with
 // protobuf's deterministic option before signing / verifying.
 
@@ -212,7 +212,7 @@ func (x *SignedCertContent) GetWorkspaceId() string {
 	return ""
 }
 
-// CertHandshakeMessage is the wire envelope on /ship/auth/ when
+// CertHandshakeMessage is the wire envelope on /mosey/auth/ when
 // CertAuth is in use. The flow is symmetric: each side sends a
 // CertHello with its cert, then a SignedNonce as proof of private-
 // key control over the cert's declared peer_pubkey.
@@ -353,7 +353,7 @@ func (x *CertHello) GetNonce() []byte {
 }
 
 // SignedNonce is the sender's Ed25519 signature over
-// "ship-cert-v1" || peer_nonce. The peer verifies against the
+// "mosey-cert-v1" || peer_nonce. The peer verifies against the
 // sender's cert.peer_pubkey.
 type SignedNonce struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -403,7 +403,7 @@ var File_internal_api_cert_proto protoreflect.FileDescriptor
 
 const file_internal_api_cert_proto_rawDesc = "" +
 	"\n" +
-	"\x17internal/api/cert.proto\x12\aship.v1\x1a\x1fgoogle/protobuf/timestamp.proto\">\n" +
+	"\x17internal/api/cert.proto\x12\bmosey.v1\x1a\x1fgoogle/protobuf/timestamp.proto\">\n" +
 	"\x04Cert\x12\x18\n" +
 	"\acontent\x18\x01 \x01(\fR\acontent\x12\x1c\n" +
 	"\tsignature\x18\x02 \x01(\fR\tsignature\"\xb1\x02\n" +
@@ -417,13 +417,13 @@ const file_internal_api_cert_proto_rawDesc = "" +
 	"not_before\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\tnotBefore\x127\n" +
 	"\tnot_after\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\bnotAfter\x12\x16\n" +
 	"\x06serial\x18\a \x01(\tR\x06serial\x12!\n" +
-	"\fworkspace_id\x18\b \x01(\tR\vworkspaceId\"{\n" +
-	"\x14CertHandshakeMessage\x12*\n" +
-	"\x05hello\x18\x01 \x01(\v2\x12.ship.v1.CertHelloH\x00R\x05hello\x12,\n" +
-	"\x05proof\x18\x02 \x01(\v2\x14.ship.v1.SignedNonceH\x00R\x05proofB\t\n" +
-	"\apayload\"D\n" +
-	"\tCertHello\x12!\n" +
-	"\x04cert\x18\x01 \x01(\v2\r.ship.v1.CertR\x04cert\x12\x14\n" +
+	"\fworkspace_id\x18\b \x01(\tR\vworkspaceId\"}\n" +
+	"\x14CertHandshakeMessage\x12+\n" +
+	"\x05hello\x18\x01 \x01(\v2\x13.mosey.v1.CertHelloH\x00R\x05hello\x12-\n" +
+	"\x05proof\x18\x02 \x01(\v2\x15.mosey.v1.SignedNonceH\x00R\x05proofB\t\n" +
+	"\apayload\"E\n" +
+	"\tCertHello\x12\"\n" +
+	"\x04cert\x18\x01 \x01(\v2\x0e.mosey.v1.CertR\x04cert\x12\x14\n" +
 	"\x05nonce\x18\x02 \x01(\fR\x05nonce\"+\n" +
 	"\vSignedNonce\x12\x1c\n" +
 	"\tsignature\x18\x01 \x01(\fR\tsignatureB7Z5github.com/firefly-engineering/mosey/internal/api;apib\x06proto3"
@@ -442,19 +442,19 @@ func file_internal_api_cert_proto_rawDescGZIP() []byte {
 
 var file_internal_api_cert_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
 var file_internal_api_cert_proto_goTypes = []any{
-	(*Cert)(nil),                  // 0: ship.v1.Cert
-	(*SignedCertContent)(nil),     // 1: ship.v1.SignedCertContent
-	(*CertHandshakeMessage)(nil),  // 2: ship.v1.CertHandshakeMessage
-	(*CertHello)(nil),             // 3: ship.v1.CertHello
-	(*SignedNonce)(nil),           // 4: ship.v1.SignedNonce
+	(*Cert)(nil),                  // 0: mosey.v1.Cert
+	(*SignedCertContent)(nil),     // 1: mosey.v1.SignedCertContent
+	(*CertHandshakeMessage)(nil),  // 2: mosey.v1.CertHandshakeMessage
+	(*CertHello)(nil),             // 3: mosey.v1.CertHello
+	(*SignedNonce)(nil),           // 4: mosey.v1.SignedNonce
 	(*timestamppb.Timestamp)(nil), // 5: google.protobuf.Timestamp
 }
 var file_internal_api_cert_proto_depIdxs = []int32{
-	5, // 0: ship.v1.SignedCertContent.not_before:type_name -> google.protobuf.Timestamp
-	5, // 1: ship.v1.SignedCertContent.not_after:type_name -> google.protobuf.Timestamp
-	3, // 2: ship.v1.CertHandshakeMessage.hello:type_name -> ship.v1.CertHello
-	4, // 3: ship.v1.CertHandshakeMessage.proof:type_name -> ship.v1.SignedNonce
-	0, // 4: ship.v1.CertHello.cert:type_name -> ship.v1.Cert
+	5, // 0: mosey.v1.SignedCertContent.not_before:type_name -> google.protobuf.Timestamp
+	5, // 1: mosey.v1.SignedCertContent.not_after:type_name -> google.protobuf.Timestamp
+	3, // 2: mosey.v1.CertHandshakeMessage.hello:type_name -> mosey.v1.CertHello
+	4, // 3: mosey.v1.CertHandshakeMessage.proof:type_name -> mosey.v1.SignedNonce
+	0, // 4: mosey.v1.CertHello.cert:type_name -> mosey.v1.Cert
 	5, // [5:5] is the sub-list for method output_type
 	5, // [5:5] is the sub-list for method input_type
 	5, // [5:5] is the sub-list for extension type_name

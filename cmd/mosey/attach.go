@@ -89,7 +89,7 @@ func runAttach(args []string, stderr *os.File) int {
 		return 1
 	}
 
-	// Wrap with auth — Dial drives the /ship/auth/ handshake before
+	// Wrap with auth — Dial drives the /mosey/auth/ handshake before
 	// opening the application stream. No Serve() on this side.
 	authed := auth.Wrap(multi, authenticator)
 

@@ -1,19 +1,20 @@
-// Package http2 is the HTTP/2 backend for ship's [transport.Transport].
-// It speaks "http://" (h2c — HTTP/2 cleartext) today; HTTPS support
-// follows once TLS configuration plumbs through.
+// Package http2 is the HTTP/2 backend for mosey's
+// [transport.Transport]. It speaks h2c (HTTP/2 cleartext, via
+// `http://`) and HTTPS (`https://`) listeners.
 //
-// Wire model: every ship "stream" maps to one HTTP/2 stream. URL path
-// carries the ship protocol id (`/ship/pty/1.0.0` etc.); request body
-// is client→server bytes; response body is server→client bytes.
-// HTTP/2 multiplexes any number of streams over one TCP connection,
-// so the per-connection cost of opening additional streams is the
-// same here as on the libp2p side.
+// Wire model: every mosey "stream" maps to one HTTP/2 stream. URL
+// path carries the mosey protocol id (`/mosey/pty/1.0.0` etc.);
+// request body is client→server bytes; response body is
+// server→client bytes. HTTP/2 multiplexes any number of streams
+// over one TCP connection, so the per-connection cost of opening
+// additional streams is the same here as on the libp2p side.
 //
-// Asymmetry note: HTTP/2 is dialer→listener. The Transport interface
-// itself is symmetric (both sides can Handle + Dial), but on this
-// backend a process that never calls New(..., Options{Listen: "..."})
-// has no Endpoints() to share — client-only. ship's `attach` is
-// client-only by design, so that works out.
+// Asymmetry note: HTTP/2 is dialer→listener. The Transport
+// interface itself is symmetric (both sides can Handle + Dial),
+// but on this backend a process that never calls
+// New(..., Options{Listen: "..."}) has no Endpoints() to share —
+// client-only. `mosey attach` is client-only by design, so that
+// works out.
 package http2
 
 import (
@@ -259,7 +260,7 @@ func (b *Backend) Close() error {
 }
 
 // serveHTTP dispatches one inbound HTTP/2 stream to the matching
-// ship handler. The handler receives a [transport.Stream]; closing
+// mosey handler. The handler receives a [transport.Stream]; closing
 // it ends the HTTP/2 stream cleanly.
 func (b *Backend) serveHTTP(w http.ResponseWriter, r *http.Request) {
 	proto := r.URL.Path

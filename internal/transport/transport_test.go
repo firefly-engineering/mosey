@@ -103,12 +103,12 @@ func TestMulti_HandleFansOut(t *testing.T) {
 	}
 
 	h := transport.Handler(func(transport.Stream) {})
-	m.Handle("/ship/pty/1.0.0", h)
+	m.Handle("/test/proto/1.0.0", h)
 
-	if _, ok := a.handlers["/ship/pty/1.0.0"]; !ok {
+	if _, ok := a.handlers["/test/proto/1.0.0"]; !ok {
 		t.Error("backend a did not receive the handler")
 	}
-	if _, ok := b.handlers["/ship/pty/1.0.0"]; !ok {
+	if _, ok := b.handlers["/test/proto/1.0.0"]; !ok {
 		t.Error("backend b did not receive the handler")
 	}
 }
@@ -118,12 +118,12 @@ func TestMulti_UnhandleFansOut(t *testing.T) {
 	a := newFake("libp2p")
 	b := newFake("https")
 	m, _ := transport.Multi(a, b)
-	m.Handle("/ship/pty/1.0.0", func(transport.Stream) {})
-	m.Unhandle("/ship/pty/1.0.0")
-	if _, ok := a.handlers["/ship/pty/1.0.0"]; ok {
+	m.Handle("/test/proto/1.0.0", func(transport.Stream) {})
+	m.Unhandle("/test/proto/1.0.0")
+	if _, ok := a.handlers["/test/proto/1.0.0"]; ok {
 		t.Error("backend a still has the handler")
 	}
-	if _, ok := b.handlers["/ship/pty/1.0.0"]; ok {
+	if _, ok := b.handlers["/test/proto/1.0.0"]; ok {
 		t.Error("backend b still has the handler")
 	}
 }
@@ -147,7 +147,7 @@ func TestMulti_DialRoutesByScheme(t *testing.T) {
 	b := newFake("https")
 	m, _ := transport.Multi(a, b)
 
-	_, _ = m.Dial(context.Background(), "https://host/x", "/ship/pty/1.0.0")
+	_, _ = m.Dial(context.Background(), "https://host/x", "/test/proto/1.0.0")
 	if len(a.dialed) != 0 {
 		t.Errorf("libp2p backend received a Dial it shouldn't have: %v", a.dialed)
 	}
@@ -162,7 +162,7 @@ func TestMulti_DialBareMultiaddrRoutesToLibp2p(t *testing.T) {
 	b := newFake("https")
 	m, _ := transport.Multi(a, b)
 
-	_, _ = m.Dial(context.Background(), "/ip4/127.0.0.1/tcp/4001/p2p/12D3KooWtest", "/ship/pty/1.0.0")
+	_, _ = m.Dial(context.Background(), "/ip4/127.0.0.1/tcp/4001/p2p/12D3KooWtest", "/test/proto/1.0.0")
 	if len(a.dialed) != 1 {
 		t.Errorf("libp2p backend should have received the bare-multiaddr Dial; got %v", a.dialed)
 	}
@@ -172,7 +172,7 @@ func TestMulti_DialUnknownScheme(t *testing.T) {
 	t.Parallel()
 	a := newFake("libp2p")
 	m, _ := transport.Multi(a)
-	_, err := m.Dial(context.Background(), "ftp://host/x", "/ship/pty/1.0.0")
+	_, err := m.Dial(context.Background(), "ftp://host/x", "/test/proto/1.0.0")
 	if err == nil {
 		t.Fatal("unknown scheme must return an error")
 	}

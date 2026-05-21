@@ -44,7 +44,7 @@ var ErrUnsupported = errors.New("transport: operation not supported by this back
 // not serialize them.
 type Handler func(Stream)
 
-// Transport is the minimum surface ship needs from a network
+// Transport is the minimum surface mosey needs from a network
 // backend. Implementations exist in [internal/transport/libp2p];
 // future backends (http2, websocket, unix) plug in via the same
 // shape.
@@ -62,7 +62,7 @@ type Transport interface {
 
 	// Endpoints returns the dialable addresses this transport is
 	// currently listening on, in URI form ("libp2p:///p2p/12D3...",
-	// "https://host:443/ship", "ws://..."). Empty for client-only
+	// "https://host:443/mosey", "ws://..."). Empty for client-only
 	// configurations (a transport with no listener).
 	Endpoints() []string
 

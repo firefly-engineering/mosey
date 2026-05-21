@@ -21,15 +21,25 @@ import (
 // from the plaintext secret. Stable across versions; changing it
 // would break compat between peers that share the same plaintext
 // secret but disagree about derivation.
-const pskInfo = "ship.v1.psk"
+const pskInfo = "mosey.v1.psk"
 
 // MAC binding labels keep the two directions' MACs distinguishable
 // so a passive attacker can't replay the server's MAC as the
 // client's (or vice versa).
 const (
-	macLabelServer = "ship-auth-v1:S"
-	macLabelClient = "ship-auth-v1:C"
+	macLabelServer = "mosey-auth-v1:S"
+	macLabelClient = "mosey-auth-v1:C"
 )
+
+// errPrefixAuth tags errors that aren't PSK-specific (config
+// validation in NewMultiPSKAuth, the cross-cutting HKDF derive
+// helper). Also shared by wrap.go for the same subsystem boundary.
+const errPrefixAuth = "mosey/auth: "
+
+// errPrefixPSK tags errors that are specific to the PSK
+// handshake flow itself — distinct from errPrefixAuth so logs
+// disambiguate config errors from on-wire failures.
+const errPrefixPSK = "mosey/auth(psk): "
 
 // LabelOwner is the conventional label for the all-powers secret
 // configured via [NewPSKAuth] / the --secret CLI flag. The server
@@ -78,7 +88,7 @@ func NewPSKAuth(secret string) (*PSKAuth, error) {
 // typical usage is one entry per client (named with its role).
 func NewMultiPSKAuth(entries []NamedSecret) (*PSKAuth, error) {
 	if len(entries) == 0 {
-		return nil, errors.New("ship/auth: at least one secret entry required")
+		return nil, errors.New(errPrefixAuth + "at least one secret entry required")
 	}
 	out := &PSKAuth{
 		byLabel: make(map[string]entry, len(entries)),
@@ -86,13 +96,13 @@ func NewMultiPSKAuth(entries []NamedSecret) (*PSKAuth, error) {
 	}
 	for _, ns := range entries {
 		if ns.Label == "" {
-			return nil, errors.New("ship/auth: secret entry needs a non-empty Label")
+			return nil, errors.New(errPrefixAuth + "secret entry needs a non-empty Label")
 		}
 		if ns.Secret == "" {
-			return nil, fmt.Errorf("ship/auth: secret entry %q has empty Secret", ns.Label)
+			return nil, fmt.Errorf(errPrefixAuth+"secret entry %q has empty Secret", ns.Label)
 		}
 		if _, dup := out.byLabel[ns.Label]; dup {
-			return nil, fmt.Errorf("ship/auth: duplicate label %q", ns.Label)
+			return nil, fmt.Errorf(errPrefixAuth+"duplicate label %q", ns.Label)
 		}
 		key, err := derivePSKKey(ns.Secret)
 		if err != nil {
@@ -138,13 +148,13 @@ func (a *PSKAuth) Name() string { return "psk" }
 // shape.
 func (a *PSKAuth) ClientHandshake(_ context.Context, stream io.ReadWriteCloser) (Identity, error) {
 	if len(a.order) == 0 {
-		return Identity{}, errors.New("ship/auth(psk): no entries configured")
+		return Identity{}, errors.New(errPrefixPSK + "no entries configured")
 	}
 	clientEntry := a.byLabel[a.order[0]]
 
 	nonceC, err := randomNonce()
 	if err != nil {
-		return Identity{}, fmt.Errorf("ship/auth(psk): nonce: %w", err)
+		return Identity{}, fmt.Errorf(errPrefixPSK+"nonce: %w", err)
 	}
 
 	if err := writeAuth(stream, &api.AuthMessage{
@@ -155,24 +165,24 @@ func (a *PSKAuth) ClientHandshake(_ context.Context, stream io.ReadWriteCloser) 
 			},
 		},
 	}); err != nil {
-		return Identity{}, fmt.Errorf("ship/auth(psk): send client_hello: %w", err)
+		return Identity{}, fmt.Errorf(errPrefixPSK+"send client_hello: %w", err)
 	}
 
 	var resp api.AuthMessage
 	if err := readAuth(stream, &resp); err != nil {
-		return Identity{}, fmt.Errorf("ship/auth(psk): read server_proof: %w", err)
+		return Identity{}, fmt.Errorf(errPrefixPSK+"read server_proof: %w", err)
 	}
 	sp := resp.GetServerProof()
 	if sp == nil {
-		return Identity{}, fmt.Errorf("ship/auth(psk): %w: server sent %T, expected ServerProof", ErrUnauthorized, resp.GetKind())
+		return Identity{}, fmt.Errorf(errPrefixPSK+"%w: server sent %T, expected ServerProof", ErrUnauthorized, resp.GetKind())
 	}
 	nonceS := sp.GetNonce()
 	if len(nonceS) != nonceSize {
-		return Identity{}, fmt.Errorf("ship/auth(psk): %w: server nonce length %d", ErrUnauthorized, len(nonceS))
+		return Identity{}, fmt.Errorf(errPrefixPSK+"%w: server nonce length %d", ErrUnauthorized, len(nonceS))
 	}
 	wantServerMac := mac(clientEntry.key[:], macLabelServer, nonceC[:], nonceS)
 	if subtle.ConstantTimeCompare(sp.GetMac(), wantServerMac) != 1 {
-		return Identity{}, fmt.Errorf("ship/auth(psk): %w: server mac mismatch", ErrUnauthorized)
+		return Identity{}, fmt.Errorf(errPrefixPSK+"%w: server mac mismatch", ErrUnauthorized)
 	}
 
 	clientMac := mac(clientEntry.key[:], macLabelClient, nonceS, nonceC[:])
@@ -181,7 +191,7 @@ func (a *PSKAuth) ClientHandshake(_ context.Context, stream io.ReadWriteCloser) 
 			ClientProof: &api.ClientProof{Mac: clientMac},
 		},
 	}); err != nil {
-		return Identity{}, fmt.Errorf("ship/auth(psk): send client_proof: %w", err)
+		return Identity{}, fmt.Errorf(errPrefixPSK+"send client_proof: %w", err)
 	}
 	return clientEntry.identity, nil
 }
@@ -193,15 +203,15 @@ func (a *PSKAuth) ClientHandshake(_ context.Context, stream io.ReadWriteCloser) 
 func (a *PSKAuth) ServerHandshake(_ context.Context, stream io.ReadWriteCloser) (Identity, error) {
 	var hello api.AuthMessage
 	if err := readAuth(stream, &hello); err != nil {
-		return Identity{}, fmt.Errorf("ship/auth(psk): read client_hello: %w", err)
+		return Identity{}, fmt.Errorf(errPrefixPSK+"read client_hello: %w", err)
 	}
 	ch := hello.GetClientHello()
 	if ch == nil {
-		return Identity{}, fmt.Errorf("ship/auth(psk): %w: client sent %T, expected ClientHello", ErrUnauthorized, hello.GetKind())
+		return Identity{}, fmt.Errorf(errPrefixPSK+"%w: client sent %T, expected ClientHello", ErrUnauthorized, hello.GetKind())
 	}
 	nonceC := ch.GetNonce()
 	if len(nonceC) != nonceSize {
-		return Identity{}, fmt.Errorf("ship/auth(psk): %w: client nonce length %d", ErrUnauthorized, len(nonceC))
+		return Identity{}, fmt.Errorf(errPrefixPSK+"%w: client nonce length %d", ErrUnauthorized, len(nonceC))
 	}
 
 	label := ch.GetLabel()
@@ -212,12 +222,12 @@ func (a *PSKAuth) ServerHandshake(_ context.Context, stream io.ReadWriteCloser) 
 	if !ok {
 		// Unknown label. Don't leak which labels exist — return the
 		// standard handshake-failure surface.
-		return Identity{}, fmt.Errorf("ship/auth(psk): %w: unknown label", ErrUnauthorized)
+		return Identity{}, fmt.Errorf(errPrefixPSK+"%w: unknown label", ErrUnauthorized)
 	}
 
 	nonceS, err := randomNonce()
 	if err != nil {
-		return Identity{}, fmt.Errorf("ship/auth(psk): nonce: %w", err)
+		return Identity{}, fmt.Errorf(errPrefixPSK+"nonce: %w", err)
 	}
 	serverMac := mac(srvEntry.key[:], macLabelServer, nonceC, nonceS[:])
 	if err := writeAuth(stream, &api.AuthMessage{
@@ -225,20 +235,20 @@ func (a *PSKAuth) ServerHandshake(_ context.Context, stream io.ReadWriteCloser) 
 			ServerProof: &api.ServerProof{Nonce: nonceS[:], Mac: serverMac},
 		},
 	}); err != nil {
-		return Identity{}, fmt.Errorf("ship/auth(psk): send server_proof: %w", err)
+		return Identity{}, fmt.Errorf(errPrefixPSK+"send server_proof: %w", err)
 	}
 
 	var finish api.AuthMessage
 	if err := readAuth(stream, &finish); err != nil {
-		return Identity{}, fmt.Errorf("ship/auth(psk): read client_proof: %w", err)
+		return Identity{}, fmt.Errorf(errPrefixPSK+"read client_proof: %w", err)
 	}
 	cp := finish.GetClientProof()
 	if cp == nil {
-		return Identity{}, fmt.Errorf("ship/auth(psk): %w: client sent %T, expected ClientProof", ErrUnauthorized, finish.GetKind())
+		return Identity{}, fmt.Errorf(errPrefixPSK+"%w: client sent %T, expected ClientProof", ErrUnauthorized, finish.GetKind())
 	}
 	wantClientMac := mac(srvEntry.key[:], macLabelClient, nonceS[:], nonceC)
 	if subtle.ConstantTimeCompare(cp.GetMac(), wantClientMac) != 1 {
-		return Identity{}, fmt.Errorf("ship/auth(psk): %w: client mac mismatch", ErrUnauthorized)
+		return Identity{}, fmt.Errorf(errPrefixPSK+"%w: client mac mismatch", ErrUnauthorized)
 	}
 	return srvEntry.identity, nil
 }
@@ -258,7 +268,7 @@ func derivePSKKey(secret string) ([32]byte, error) {
 	var out [32]byte
 	r := hkdf.New(sha256.New, []byte(secret), nil, []byte(pskInfo))
 	if _, err := io.ReadFull(r, out[:]); err != nil {
-		return out, fmt.Errorf("ship/auth: derive PSK key: %w", err)
+		return out, fmt.Errorf(errPrefixAuth+"derive PSK key: %w", err)
 	}
 	return out, nil
 }

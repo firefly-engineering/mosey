@@ -1,7 +1,7 @@
 # Transports
 
 The `transport.Transport` interface is the only surface higher
-layers depend on. Two backends ship today; new ones plug in by
+layers depend on. Two backends are included today; new ones plug in by
 implementing the same shape.
 
 ```go
@@ -28,7 +28,7 @@ The production cross-host transport.
 wraps go-libp2p with:
 
 - **Noise** for confidentiality and authentication of the
-  underlying libp2p channel. (mosey adds its own `/ship/auth/` layer
+  underlying libp2p channel. (mosey adds its own `/mosey/auth/` layer
   on top — Noise authenticates _peers_ at the transport layer;
   mosey authenticates _workspaces_ at the application layer.)
 - **TCP + QUIC** listeners by default. QUIC carries the bulk of
@@ -43,7 +43,7 @@ wraps go-libp2p with:
 
 The endpoint is a libp2p multiaddr ending in `/p2p/<peer-id>`.
 mosey doesn't have its own discovery — the calling project has to
-ship the multiaddr from launcher to attacher somehow (Slack, env
+carry the multiaddr from launcher to attacher somehow (Slack, env
 var, a dedicated registry).
 
 ## HTTP/2 backend
@@ -60,7 +60,7 @@ POST /<proto> HTTP/2
 The protocol ID rides in the URL path. Half-close maps to
 HTTP/2's end-stream flag — `Stream.CloseWrite()` finishes the
 request body without closing the response stream, just like
-`/ship/auth/` requires.
+`/mosey/auth/` requires.
 
 Two flavours of listener:
 
