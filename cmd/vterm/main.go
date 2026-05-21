@@ -52,7 +52,7 @@ func run(args []string, stderr *os.File) int {
 	secret := fs.String("secret", "", "shared PSK; required, must match the attach side")
 	listens := stringSliceFlag{}
 	fs.Var(&listens, "listen", "backend listener; repeatable. Forms: libp2p:// (default — random TCP+QUIC ports) | http://host:port (h2c).")
-	noBootstrap := fs.Bool("no-bootstrap", false, "skip the IPFS public bootstrap set; useful for LAN-only / offline testing")
+	noBootstrap := fs.Bool("no-p2p-bootstrap", false, "skip the IPFS public bootstrap set; useful for LAN-only / offline testing")
 	logLevel := fs.String("log-level", "warn", "slog level: debug|info|warn|error")
 
 	if err := fs.Parse(args); err != nil {

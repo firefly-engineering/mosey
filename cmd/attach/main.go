@@ -37,7 +37,7 @@ func run(args []string, stderr *os.File) int {
 	fs := flag.NewFlagSet("attach", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	secret := fs.String("secret", "", "shared PSK; required, must match the vterm side")
-	noBootstrap := fs.Bool("no-bootstrap", false, "skip the IPFS public bootstrap set; useful for LAN-only / offline testing")
+	noBootstrap := fs.Bool("no-p2p-bootstrap", false, "skip the IPFS public bootstrap set; useful for LAN-only / offline testing")
 	logLevel := fs.String("log-level", "warn", "slog level: debug|info|warn|error")
 
 	if err := fs.Parse(args); err != nil {
@@ -107,7 +107,7 @@ func run(args []string, stderr *os.File) int {
 }
 
 // libp2pOptsForAttach builds the libp2p backend's options for a
-// client-only attach process. --no-bootstrap skips the IPFS public
+// client-only attach process. --no-p2p-bootstrap skips the IPFS public
 // set (LAN-only / offline use).
 func libp2pOptsForAttach(noBootstrap bool) libp2pbackend.Options {
 	opts := libp2pbackend.Options{}
