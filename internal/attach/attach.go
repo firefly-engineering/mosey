@@ -15,14 +15,13 @@ import (
 	"io"
 	"log/slog"
 	"os"
-	"strings"
 
 	"github.com/libp2p/go-libp2p/core/host"
-	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"golang.org/x/term"
 
 	"github.com/firefly-engineering/ship/internal/api"
+	"github.com/firefly-engineering/ship/internal/transport"
 )
 
 // Options configures [Run].
@@ -122,41 +121,11 @@ func Run(ctx context.Context, opts Options) error {
 
 	select {
 	case err := <-errc:
-		if err == nil || isExpectedShutdown(err) {
+		if transport.IsExpectedShutdown(err) {
 			return nil
 		}
 		return fmt.Errorf("ship/attach: stream: %w", err)
 	case <-ctx.Done():
 		return ctx.Err()
 	}
-}
-
-// isExpectedShutdown reports whether err is a normal-lifecycle
-// stream close signal (peer's write half closed, transport
-// teardown, etc.). The vterm-side handler calls Close on clean
-// child exit, which still propagates as a "stream reset" via
-// some libp2p muxers — match on the wire-visible strings rather
-// than relying solely on sentinel equality.
-func isExpectedShutdown(err error) bool {
-	if err == nil {
-		return true
-	}
-	if errors.Is(err, io.EOF) || errors.Is(err, network.ErrReset) ||
-		errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-		return true
-	}
-	msg := err.Error()
-	for _, sub := range shutdownErrorSubstrings {
-		if strings.Contains(msg, sub) {
-			return true
-		}
-	}
-	return false
-}
-
-var shutdownErrorSubstrings = []string{
-	"sent go away",
-	"connection closed",
-	"stream reset",
-	"use of closed network connection",
 }

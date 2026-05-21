@@ -12,6 +12,7 @@ import (
 	"google.golang.org/protobuf/encoding/protodelim"
 
 	"github.com/firefly-engineering/ship/internal/api"
+	"github.com/firefly-engineering/ship/internal/transport"
 )
 
 // handleControl is the libp2p stream handler for [api.ProtoControl].
@@ -37,7 +38,7 @@ func (s *Service) handleControl(stream network.Stream) {
 	for {
 		var msg api.ControlMessage
 		if err := protodelim.UnmarshalFrom(reader, &msg); err != nil {
-			if !isExpectedShutdown(err) {
+			if !transport.IsExpectedShutdown(err) {
 				cleanShutdown = false
 				s.logger.Warn("control read", "peer", remote, "err", err)
 			}

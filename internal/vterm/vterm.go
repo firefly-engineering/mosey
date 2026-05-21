@@ -17,7 +17,6 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
-	"strings"
 	"sync"
 	"syscall"
 
@@ -26,6 +25,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/network"
 
 	"github.com/firefly-engineering/ship/internal/api"
+	"github.com/firefly-engineering/ship/internal/transport"
 )
 
 // Service is a running vterm: a child process under a PTY plus the
@@ -147,45 +147,11 @@ func (s *Service) handlePTY(stream network.Stream) {
 	}()
 
 	err := <-errc
-	if err == nil || isExpectedShutdown(err) {
+	if transport.IsExpectedShutdown(err) {
 		_ = stream.Close()
 	} else {
 		s.logger.Warn("attach stream error", "peer", remote, "err", err)
 		_ = stream.Reset()
 	}
 	s.logger.Info("attach closed", "peer", remote)
-}
-
-// isExpectedShutdown reports whether err is a "the peer or the
-// transport told us we're done" signal — EOF, libp2p stream reset,
-// context cancellation, connection closed. These shouldn't generate
-// warnings in handler exit paths; they're normal lifecycle.
-func isExpectedShutdown(err error) bool {
-	if err == nil {
-		return true
-	}
-	if errors.Is(err, io.EOF) ||
-		errors.Is(err, network.ErrReset) ||
-		errors.Is(err, context.Canceled) ||
-		errors.Is(err, context.DeadlineExceeded) {
-		return true
-	}
-	// libp2p surfaces connection closure as wrapped errors that
-	// don't always sentinel-match (e.g. "sent go away", "connection
-	// closed"). Fall back to substring match on the wire-visible
-	// shutdown strings.
-	msg := err.Error()
-	for _, sub := range shutdownErrorSubstrings {
-		if strings.Contains(msg, sub) {
-			return true
-		}
-	}
-	return false
-}
-
-var shutdownErrorSubstrings = []string{
-	"sent go away",
-	"connection closed",
-	"stream reset",
-	"use of closed network connection",
 }
