@@ -24,6 +24,8 @@ import (
 
 	"github.com/firefly-engineering/ship/internal/attach"
 	"github.com/firefly-engineering/ship/internal/auth"
+	"github.com/firefly-engineering/ship/internal/transport"
+	httpbackend "github.com/firefly-engineering/ship/internal/transport/http2"
 	libp2pbackend "github.com/firefly-engineering/ship/internal/transport/libp2p"
 )
 
@@ -66,22 +68,32 @@ func run(args []string, stderr *os.File) int {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
-	backendOpts := libp2pbackend.Options{}
-	if *noBootstrap {
-		backendOpts.Bootstrap = []peer.AddrInfo{}
-	}
-
-	backend, err := libp2pbackend.New(ctx, backendOpts)
+	// Attach is client-only — build one backend per scheme it may
+	// need to dial. Multi routes Dial by URI scheme so a single
+	// CLI invocation can target either backend.
+	libp2pBackend, err := libp2pbackend.New(ctx, libp2pOptsForAttach(*noBootstrap))
 	if err != nil {
 		fmt.Fprintln(stderr, "attach:", err)
 		return 1
 	}
-	defer func() { _ = backend.Close() }()
+	defer func() { _ = libp2pBackend.Close() }()
 
-	// Attach is client-only — Dial through the wrapper drives the
-	// /ship/auth/ handshake before opening the application stream.
-	// No Serve() call needed on this side.
-	authed := auth.Wrap(backend, psk)
+	httpBackend, err := httpbackend.New(ctx, httpbackend.Options{}) // client-only
+	if err != nil {
+		fmt.Fprintln(stderr, "attach:", err)
+		return 1
+	}
+	defer func() { _ = httpBackend.Close() }()
+
+	multi, err := transport.Multi(libp2pBackend, httpBackend)
+	if err != nil {
+		fmt.Fprintln(stderr, "attach:", err)
+		return 1
+	}
+
+	// Wrap with auth — Dial drives the /ship/auth/ handshake before
+	// opening the application stream. No Serve() on this side.
+	authed := auth.Wrap(multi, psk)
 
 	if err := attach.Run(ctx, attach.Options{
 		Transport: authed,
@@ -92,6 +104,17 @@ func run(args []string, stderr *os.File) int {
 		return 1
 	}
 	return 0
+}
+
+// libp2pOptsForAttach builds the libp2p backend's options for a
+// client-only attach process. --no-bootstrap skips the IPFS public
+// set (LAN-only / offline use).
+func libp2pOptsForAttach(noBootstrap bool) libp2pbackend.Options {
+	opts := libp2pbackend.Options{}
+	if noBootstrap {
+		opts.Bootstrap = []peer.AddrInfo{}
+	}
+	return opts
 }
 
 func newLogger(out *os.File, level string) *slog.Logger {

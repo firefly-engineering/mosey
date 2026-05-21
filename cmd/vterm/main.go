@@ -6,9 +6,13 @@
 //
 // --listen is repeatable; each value picks a backend by URI scheme:
 //
-//	libp2p://         — libp2p host (default if no --listen is given)
+//	libp2p://          libp2p host (default if no --listen is given)
+//	http://host:port   HTTP/2 cleartext (h2c) listener
 //
-// (more backends like https:// land as separate commits.)
+// Both can be active simultaneously: `vterm --listen=libp2p://
+// --listen=http://0.0.0.0:8080 -- bash` listens on libp2p AND h2c
+// at the same time. Attach peers pick whichever scheme they can
+// reach.
 //
 // The program runs in the foreground; vterm exits when the program
 // exits. Other peers that share SECRET can attach via
@@ -33,6 +37,7 @@ import (
 
 	"github.com/firefly-engineering/ship/internal/auth"
 	"github.com/firefly-engineering/ship/internal/transport"
+	httpbackend "github.com/firefly-engineering/ship/internal/transport/http2"
 	libp2pbackend "github.com/firefly-engineering/ship/internal/transport/libp2p"
 	"github.com/firefly-engineering/ship/internal/vterm"
 )
@@ -46,7 +51,7 @@ func run(args []string, stderr *os.File) int {
 	fs.SetOutput(stderr)
 	secret := fs.String("secret", "", "shared PSK; required, must match the attach side")
 	listens := stringSliceFlag{}
-	fs.Var(&listens, "listen", "backend listener; repeatable (libp2p://). Default: libp2p:// with random TCP+QUIC ports.")
+	fs.Var(&listens, "listen", "backend listener; repeatable. Forms: libp2p:// (default — random TCP+QUIC ports) | http://host:port (h2c).")
 	noBootstrap := fs.Bool("no-bootstrap", false, "skip the IPFS public bootstrap set; useful for LAN-only / offline testing")
 	logLevel := fs.String("log-level", "warn", "slog level: debug|info|warn|error")
 
@@ -141,11 +146,14 @@ func (s *stringSliceFlag) String() string {
 func buildBackends(ctx context.Context, listens []string, noBootstrap bool) ([]transport.Transport, error) {
 	out := make([]transport.Transport, 0, len(listens))
 	for _, raw := range listens {
-		scheme, err := schemeOf(raw)
+		u, err := url.Parse(raw)
 		if err != nil {
 			return nil, fmt.Errorf("--listen=%q: %w", raw, err)
 		}
-		switch scheme {
+		if u.Scheme == "" {
+			return nil, fmt.Errorf("--listen=%q: missing scheme", raw)
+		}
+		switch u.Scheme {
 		case libp2pbackend.Scheme:
 			opts := libp2pbackend.Options{}
 			if noBootstrap {
@@ -156,24 +164,24 @@ func buildBackends(ctx context.Context, listens []string, noBootstrap bool) ([]t
 				return nil, fmt.Errorf("--listen=%q: %w", raw, err)
 			}
 			out = append(out, b)
+		case httpbackend.SchemeHTTP:
+			// http://host:port/ — listen on host:port. The path
+			// component (if any) is ignored; ship protocol ids form
+			// the path on incoming requests.
+			addr := u.Host
+			if addr == "" {
+				addr = "0.0.0.0:0"
+			}
+			b, err := httpbackend.New(ctx, httpbackend.Options{ListenAddr: addr})
+			if err != nil {
+				return nil, fmt.Errorf("--listen=%q: %w", raw, err)
+			}
+			out = append(out, b)
 		default:
-			return nil, fmt.Errorf("--listen=%q: unknown scheme %q (have: libp2p)", raw, scheme)
+			return nil, fmt.Errorf("--listen=%q: unknown scheme %q (have: libp2p, http)", raw, u.Scheme)
 		}
 	}
 	return out, nil
-}
-
-// schemeOf pulls the URI scheme from a listen value. "libp2p://" →
-// "libp2p"; "https://0.0.0.0:443/ship" → "https".
-func schemeOf(s string) (string, error) {
-	u, err := url.Parse(s)
-	if err != nil {
-		return "", fmt.Errorf("parse: %w", err)
-	}
-	if u.Scheme == "" {
-		return "", errors.New("missing scheme")
-	}
-	return u.Scheme, nil
 }
 
 func newLogger(out *os.File, level string) *slog.Logger {
