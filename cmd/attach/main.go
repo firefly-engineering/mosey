@@ -38,6 +38,7 @@ func run(args []string, stderr *os.File) int {
 	fs.SetOutput(stderr)
 	secret := fs.String("secret", "", "shared PSK; required, must match the vterm side")
 	noBootstrap := fs.Bool("no-p2p-bootstrap", false, "skip the IPFS public bootstrap set; useful for LAN-only / offline testing")
+	insecureTLS := fs.Bool("insecure-tls", false, "for https:// endpoints, skip server certificate verification (self-signed dev only)")
 	logLevel := fs.String("log-level", "warn", "slog level: debug|info|warn|error")
 
 	if err := fs.Parse(args); err != nil {
@@ -78,7 +79,9 @@ func run(args []string, stderr *os.File) int {
 	}
 	defer func() { _ = libp2pBackend.Close() }()
 
-	httpBackend, err := httpbackend.New(ctx, httpbackend.Options{}) // client-only
+	httpBackend, err := httpbackend.New(ctx, httpbackend.Options{
+		InsecureSkipVerify: *insecureTLS,
+	}) // client-only
 	if err != nil {
 		fmt.Fprintln(stderr, "attach:", err)
 		return 1

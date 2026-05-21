@@ -22,6 +22,7 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"flag"
 	"fmt"
@@ -52,8 +53,10 @@ func run(args []string, stderr *os.File) int {
 	secret := fs.String("secret", "", "owner PSK; required. Attachers presenting this secret get full write + resize.")
 	readerSecret := fs.String("reader-secret", "", "optional reader PSK; attachers presenting it get observer (no write, no resize) access.")
 	mode := fs.String("mode", "supersede", "multi-client mode: supersede (newest wins) | exclusive (one at a time) | primary-observer (first writer + observers) | multi-write (everyone types)")
+	httpCert := fs.String("http-cert", "", "PEM-encoded TLS cert path for https:// listeners. Required for https:// in --listen; h2c (http://) listens without it.")
+	httpKey := fs.String("http-key", "", "PEM-encoded TLS private key path matching --http-cert.")
 	listens := stringSliceFlag{}
-	fs.Var(&listens, "listen", "backend listener; repeatable. Forms: libp2p:// (default — random TCP+QUIC ports) | http://host:port (h2c).")
+	fs.Var(&listens, "listen", "backend listener; repeatable. Forms: libp2p:// (default — random TCP+QUIC ports) | http://host:port (h2c) | https://host:port (TLS — requires --http-cert/--http-key).")
 	noBootstrap := fs.Bool("no-p2p-bootstrap", false, "skip the IPFS public bootstrap set; useful for LAN-only / offline testing")
 	logLevel := fs.String("log-level", "warn", "slog level: debug|info|warn|error")
 
@@ -104,7 +107,7 @@ func run(args []string, stderr *os.File) int {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
-	backends, err := buildBackends(ctx, listens, *noBootstrap)
+	backends, err := buildBackends(ctx, listens, *noBootstrap, *httpCert, *httpKey)
 	if err != nil {
 		fmt.Fprintln(stderr, "vterm:", err)
 		return 2
@@ -166,8 +169,10 @@ func (s *stringSliceFlag) String() string {
 }
 
 // buildBackends constructs one transport per --listen URI, picking
-// the backend by URI scheme.
-func buildBackends(ctx context.Context, listens []string, noBootstrap bool) ([]transport.Transport, error) {
+// the backend by URI scheme. httpCertPath / httpKeyPath are the
+// TLS material used for https:// listeners; passing them with no
+// matching listen URI is a config error.
+func buildBackends(ctx context.Context, listens []string, noBootstrap bool, httpCertPath, httpKeyPath string) ([]transport.Transport, error) {
 	out := make([]transport.Transport, 0, len(listens))
 	for _, raw := range listens {
 		u, err := url.Parse(raw)
@@ -189,9 +194,6 @@ func buildBackends(ctx context.Context, listens []string, noBootstrap bool) ([]t
 			}
 			out = append(out, b)
 		case httpbackend.SchemeHTTP:
-			// http://host:port/ — listen on host:port. The path
-			// component (if any) is ignored; ship protocol ids form
-			// the path on incoming requests.
 			addr := u.Host
 			if addr == "" {
 				addr = "0.0.0.0:0"
@@ -201,8 +203,32 @@ func buildBackends(ctx context.Context, listens []string, noBootstrap bool) ([]t
 				return nil, fmt.Errorf("--listen=%q: %w", raw, err)
 			}
 			out = append(out, b)
+		case httpbackend.SchemeHTTPS:
+			if httpCertPath == "" || httpKeyPath == "" {
+				return nil, fmt.Errorf("--listen=%q: --http-cert and --http-key are required for https:// listeners", raw)
+			}
+			cert, err := tls.LoadX509KeyPair(httpCertPath, httpKeyPath)
+			if err != nil {
+				return nil, fmt.Errorf("--listen=%q: load cert / key: %w", raw, err)
+			}
+			addr := u.Host
+			if addr == "" {
+				addr = "0.0.0.0:0"
+			}
+			b, err := httpbackend.New(ctx, httpbackend.Options{
+				ListenAddr: addr,
+				TLSConfig: &tls.Config{
+					Certificates: []tls.Certificate{cert},
+					MinVersion:   tls.VersionTLS12,
+					NextProtos:   []string{"h2"},
+				},
+			})
+			if err != nil {
+				return nil, fmt.Errorf("--listen=%q: %w", raw, err)
+			}
+			out = append(out, b)
 		default:
-			return nil, fmt.Errorf("--listen=%q: unknown scheme %q (have: libp2p, http)", raw, u.Scheme)
+			return nil, fmt.Errorf("--listen=%q: unknown scheme %q (have: libp2p, http, https)", raw, u.Scheme)
 		}
 	}
 	return out, nil

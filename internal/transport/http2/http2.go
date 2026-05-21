@@ -32,10 +32,12 @@ import (
 	"github.com/firefly-engineering/ship/internal/transport"
 )
 
-// SchemeHTTP is the URI scheme this backend claims for h2c
-// connections. HTTPS will register as a separate scheme when the
-// TLS path lands.
-const SchemeHTTP = "http"
+// Scheme constants this backend claims under [transport.Multi].
+// "http" is plaintext h2c; "https" is TLS-terminated HTTP/2.
+const (
+	SchemeHTTP  = "http"
+	SchemeHTTPS = "https"
+)
 
 // Options configures a [Backend].
 type Options struct {
@@ -44,28 +46,48 @@ type Options struct {
 	// are never received. Pass "0.0.0.0:0" for a random port on
 	// all interfaces.
 	ListenAddr string
+
+	// TLSConfig, when non-nil, switches the listener to HTTPS:
+	// the backend serves HTTP/2 over TLS using this config, and
+	// Endpoints() returns "https://..." URLs. Callers are
+	// responsible for populating Certificates (or GetCertificate)
+	// before passing. Zero means plaintext h2c.
+	TLSConfig *tls.Config
+
+	// InsecureSkipVerify makes the client-side Dial path accept
+	// any server certificate — useful for self-signed dev certs.
+	// Affects only the Dial direction; the listener's behavior is
+	// driven by TLSConfig.
+	InsecureSkipVerify bool
 }
 
-// Backend implements [transport.Transport] over HTTP/2 (h2c).
+// Backend implements [transport.Transport] over HTTP/2. Speaks
+// h2c by default; switches to HTTPS when Options.TLSConfig is
+// non-nil.
 type Backend struct {
 	server   *http.Server
 	listener net.Listener
 	addr     string // host:port the listener bound to
+	useTLS   bool   // listener serves HTTPS rather than h2c
 
 	mu       sync.Mutex
 	handlers map[string]transport.Handler
 
-	client *http.Client
+	clientH2C  *http.Client // for http:// (cleartext) dials
+	clientHTTPS *http.Client // for https:// dials; nil when not needed
 }
 
 // New constructs an HTTP/2 backend. When opts.ListenAddr is non-
 // empty the backend immediately starts serving; clients-only
 // callers may pass an empty ListenAddr and use the backend purely
-// for Dial.
+// for Dial. When opts.TLSConfig is non-nil the listener serves
+// HTTPS; otherwise plain h2c.
 func New(ctx context.Context, opts Options) (*Backend, error) {
 	b := &Backend{
-		handlers: map[string]transport.Handler{},
-		client:   buildH2CClient(),
+		handlers:    map[string]transport.Handler{},
+		useTLS:      opts.TLSConfig != nil,
+		clientH2C:   buildH2CClient(),
+		clientHTTPS: buildHTTPSClient(opts.InsecureSkipVerify),
 	}
 
 	if opts.ListenAddr != "" {
@@ -77,32 +99,55 @@ func New(ctx context.Context, opts Options) (*Backend, error) {
 		b.addr = lis.Addr().String()
 
 		h2s := &http2.Server{}
-		b.server = &http.Server{
-			Handler: h2c.NewHandler(http.HandlerFunc(b.serveHTTP), h2s),
-			// HTTP/2 streams can stay open indefinitely (long-lived
-			// PTY bridge), so don't time them out at the server
-			// level. The transport.Stream lifecycle handles teardown.
-			ReadTimeout:  0,
-			WriteTimeout: 0,
+		if opts.TLSConfig != nil {
+			// HTTPS path: std-lib http.Server negotiates HTTP/2
+			// via ALPN with the supplied TLS config.
+			b.server = &http.Server{
+				Handler:      http.HandlerFunc(b.serveHTTP),
+				TLSConfig:    opts.TLSConfig.Clone(),
+				ReadTimeout:  0,
+				WriteTimeout: 0,
+			}
+			// Configure http2 on the server so we get the proper
+			// h2 settings (priority, max-frame-size, etc.).
+			if err := http2.ConfigureServer(b.server, h2s); err != nil {
+				_ = lis.Close()
+				return nil, fmt.Errorf("http2: configure server: %w", err)
+			}
+			go func() {
+				_ = b.server.ServeTLS(lis, "", "") // cert/key already in TLSConfig
+			}()
+		} else {
+			// h2c path: wrap the handler so plain-TCP requests
+			// upgrade to HTTP/2 without TLS.
+			b.server = &http.Server{
+				Handler:      h2c.NewHandler(http.HandlerFunc(b.serveHTTP), h2s),
+				ReadTimeout:  0,
+				WriteTimeout: 0,
+			}
+			go func() {
+				_ = b.server.Serve(lis)
+			}()
 		}
-		go func() {
-			_ = b.server.Serve(lis)
-		}()
 	}
 
 	_ = ctx // reserved for shutdown plumbing; nothing uses it today
 	return b, nil
 }
 
-// Schemes implements [transport.Transport].
-func (b *Backend) Schemes() []string { return []string{SchemeHTTP} }
+// Schemes implements [transport.Transport]. The backend can Dial
+// both http:// and https:// regardless of which scheme its
+// listener serves (clients may need to reach a peer over either).
+func (b *Backend) Schemes() []string { return []string{SchemeHTTP, SchemeHTTPS} }
 
-// Endpoints implements [transport.Transport]. Returns one URL per
-// bound interface — for the typical 0.0.0.0 bind, that's just the
-// resolved listener address.
+// Endpoints implements [transport.Transport]. The advertised URL
+// matches the listener's scheme — h2c → http://, TLS → https://.
 func (b *Backend) Endpoints() []string {
 	if b.addr == "" {
 		return nil
+	}
+	if b.useTLS {
+		return []string{"https://" + b.addr}
 	}
 	return []string{"http://" + b.addr}
 }
@@ -130,14 +175,19 @@ func (b *Backend) Dial(ctx context.Context, endpoint, proto string) (transport.S
 	if err != nil {
 		return nil, fmt.Errorf("http2: parse endpoint %q: %w", endpoint, err)
 	}
-	if u.Scheme != SchemeHTTP {
-		return nil, fmt.Errorf("http2: unsupported scheme %q (want http)", u.Scheme)
+	if u.Scheme != SchemeHTTP && u.Scheme != SchemeHTTPS {
+		return nil, fmt.Errorf("http2: unsupported scheme %q (want http or https)", u.Scheme)
 	}
 	if u.Host == "" {
 		return nil, fmt.Errorf("http2: endpoint %q missing host", endpoint)
 	}
 	target := *u
 	target.Path = proto
+
+	client := b.clientH2C
+	if u.Scheme == SchemeHTTPS {
+		client = b.clientHTTPS
+	}
 
 	pipeR, pipeW := io.Pipe()
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, target.String(), pipeR)
@@ -152,16 +202,13 @@ func (b *Backend) Dial(ctx context.Context, endpoint, proto string) (transport.S
 	req.ContentLength = -1
 	req.Header.Set("Content-Type", "application/octet-stream")
 
-	// Use an explicit channel to capture the response; doing so in
-	// a goroutine lets the caller start writing to pipeW (and
-	// thereby the request body) before the response headers arrive.
 	type roundTripResult struct {
 		resp *http.Response
 		err  error
 	}
 	resultCh := make(chan roundTripResult, 1)
 	go func() {
-		resp, rerr := b.client.Do(req)
+		resp, rerr := client.Do(req)
 		resultCh <- roundTripResult{resp: resp, err: rerr}
 	}()
 
@@ -202,7 +249,12 @@ func (b *Backend) Close() error {
 	if b.listener != nil {
 		_ = b.listener.Close()
 	}
-	b.client.CloseIdleConnections()
+	if b.clientH2C != nil {
+		b.clientH2C.CloseIdleConnections()
+	}
+	if b.clientHTTPS != nil {
+		b.clientHTTPS.CloseIdleConnections()
+	}
 	return nil
 }
 
@@ -257,4 +309,20 @@ func buildH2CClient() *http.Client {
 			},
 		},
 	}
+}
+
+// buildHTTPSClient configures an HTTP client for the https:// dial
+// path. http2.Transport with default DialTLSContext negotiates
+// HTTP/2 via ALPN on a normal TLS connection — same behavior
+// the std lib's http.Client gives for HTTPS, just pinned to h2.
+//
+// insecureSkipVerify accepts any server cert (intended for
+// self-signed dev setups). Production callers should pass false
+// and rely on the system trust store + the server's real cert.
+func buildHTTPSClient(insecureSkipVerify bool) *http.Client {
+	tr := &http2.Transport{}
+	if insecureSkipVerify {
+		tr.TLSClientConfig = &tls.Config{InsecureSkipVerify: true} //nolint:gosec // opt-in
+	}
+	return &http.Client{Transport: tr}
 }
