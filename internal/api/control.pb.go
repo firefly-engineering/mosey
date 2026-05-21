@@ -85,6 +85,61 @@ func (Signal_Kind) EnumDescriptor() ([]byte, []int) {
 	return file_internal_api_control_proto_rawDescGZIP(), []int{2, 0}
 }
 
+type SetMode_Kind int32
+
+const (
+	SetMode_KIND_UNSPECIFIED      SetMode_Kind = 0
+	SetMode_KIND_SUPERSEDE        SetMode_Kind = 1
+	SetMode_KIND_EXCLUSIVE        SetMode_Kind = 2
+	SetMode_KIND_PRIMARY_OBSERVER SetMode_Kind = 3
+	SetMode_KIND_MULTI_WRITE      SetMode_Kind = 4
+)
+
+// Enum value maps for SetMode_Kind.
+var (
+	SetMode_Kind_name = map[int32]string{
+		0: "KIND_UNSPECIFIED",
+		1: "KIND_SUPERSEDE",
+		2: "KIND_EXCLUSIVE",
+		3: "KIND_PRIMARY_OBSERVER",
+		4: "KIND_MULTI_WRITE",
+	}
+	SetMode_Kind_value = map[string]int32{
+		"KIND_UNSPECIFIED":      0,
+		"KIND_SUPERSEDE":        1,
+		"KIND_EXCLUSIVE":        2,
+		"KIND_PRIMARY_OBSERVER": 3,
+		"KIND_MULTI_WRITE":      4,
+	}
+)
+
+func (x SetMode_Kind) Enum() *SetMode_Kind {
+	p := new(SetMode_Kind)
+	*p = x
+	return p
+}
+
+func (x SetMode_Kind) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (SetMode_Kind) Descriptor() protoreflect.EnumDescriptor {
+	return file_internal_api_control_proto_enumTypes[1].Descriptor()
+}
+
+func (SetMode_Kind) Type() protoreflect.EnumType {
+	return &file_internal_api_control_proto_enumTypes[1]
+}
+
+func (x SetMode_Kind) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use SetMode_Kind.Descriptor instead.
+func (SetMode_Kind) EnumDescriptor() ([]byte, []int) {
+	return file_internal_api_control_proto_rawDescGZIP(), []int{3, 0}
+}
+
 // ControlMessage is the envelope carried on /ship/control/. Each
 // frame is length-delimited (varint length prefix + serialized
 // proto) so a single stream multiplexes typed messages without a
@@ -101,6 +156,8 @@ type ControlMessage struct {
 	//
 	//	*ControlMessage_Resize
 	//	*ControlMessage_Signal
+	//	*ControlMessage_SetMode
+	//	*ControlMessage_Demote
 	Payload       isControlMessage_Payload `protobuf_oneof:"payload"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -161,6 +218,24 @@ func (x *ControlMessage) GetSignal() *Signal {
 	return nil
 }
 
+func (x *ControlMessage) GetSetMode() *SetMode {
+	if x != nil {
+		if x, ok := x.Payload.(*ControlMessage_SetMode); ok {
+			return x.SetMode
+		}
+	}
+	return nil
+}
+
+func (x *ControlMessage) GetDemote() *Demote {
+	if x != nil {
+		if x, ok := x.Payload.(*ControlMessage_Demote); ok {
+			return x.Demote
+		}
+	}
+	return nil
+}
+
 type isControlMessage_Payload interface {
 	isControlMessage_Payload()
 }
@@ -173,9 +248,21 @@ type ControlMessage_Signal struct {
 	Signal *Signal `protobuf:"bytes,2,opt,name=signal,proto3,oneof"`
 }
 
+type ControlMessage_SetMode struct {
+	SetMode *SetMode `protobuf:"bytes,3,opt,name=set_mode,json=setMode,proto3,oneof"`
+}
+
+type ControlMessage_Demote struct {
+	Demote *Demote `protobuf:"bytes,4,opt,name=demote,proto3,oneof"`
+}
+
 func (*ControlMessage_Resize) isControlMessage_Payload() {}
 
 func (*ControlMessage_Signal) isControlMessage_Payload() {}
+
+func (*ControlMessage_SetMode) isControlMessage_Payload() {}
+
+func (*ControlMessage_Demote) isControlMessage_Payload() {}
 
 // Resize requests that the remote PTY be set to the given size
 // (TIOCSWINSZ-equivalent). Attach sends one on connect and again
@@ -280,14 +367,108 @@ func (x *Signal) GetKind() Signal_Kind {
 	return Signal_KIND_UNSPECIFIED
 }
 
+// SetMode switches the vterm session's multi-client mode at
+// runtime. Owner-only — vterm silently drops the message from any
+// client whose [Identity] doesn't hold the Owner capability. The
+// new mode applies to *future* attaches; existing clients keep
+// their current permissions (use Demote to step down, future
+// Kick/Promote RPCs to manage others).
+type SetMode struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Kind          SetMode_Kind           `protobuf:"varint,1,opt,name=kind,proto3,enum=ship.v1.SetMode_Kind" json:"kind,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SetMode) Reset() {
+	*x = SetMode{}
+	mi := &file_internal_api_control_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetMode) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetMode) ProtoMessage() {}
+
+func (x *SetMode) ProtoReflect() protoreflect.Message {
+	mi := &file_internal_api_control_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetMode.ProtoReflect.Descriptor instead.
+func (*SetMode) Descriptor() ([]byte, []int) {
+	return file_internal_api_control_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *SetMode) GetKind() SetMode_Kind {
+	if x != nil {
+		return x.Kind
+	}
+	return SetMode_KIND_UNSPECIFIED
+}
+
+// Demote is the self-service write-permission drop. The client
+// sending Demote loses its write + resize permissions; if it
+// happened to hold the PrimaryObserver writer seat, the seat
+// becomes vacant (no auto-promotion). Useful for "going AFK; don't
+// let me typo into prod." No cap required — any client can demote
+// itself.
+type Demote struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Demote) Reset() {
+	*x = Demote{}
+	mi := &file_internal_api_control_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Demote) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Demote) ProtoMessage() {}
+
+func (x *Demote) ProtoReflect() protoreflect.Message {
+	mi := &file_internal_api_control_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Demote.ProtoReflect.Descriptor instead.
+func (*Demote) Descriptor() ([]byte, []int) {
+	return file_internal_api_control_proto_rawDescGZIP(), []int{4}
+}
+
 var File_internal_api_control_proto protoreflect.FileDescriptor
 
 const file_internal_api_control_proto_rawDesc = "" +
 	"\n" +
-	"\x1ainternal/api/control.proto\x12\aship.v1\"q\n" +
+	"\x1ainternal/api/control.proto\x12\aship.v1\"\xcb\x01\n" +
 	"\x0eControlMessage\x12)\n" +
 	"\x06resize\x18\x01 \x01(\v2\x0f.ship.v1.ResizeH\x00R\x06resize\x12)\n" +
-	"\x06signal\x18\x02 \x01(\v2\x0f.ship.v1.SignalH\x00R\x06signalB\t\n" +
+	"\x06signal\x18\x02 \x01(\v2\x0f.ship.v1.SignalH\x00R\x06signal\x12-\n" +
+	"\bset_mode\x18\x03 \x01(\v2\x10.ship.v1.SetModeH\x00R\asetMode\x12)\n" +
+	"\x06demote\x18\x04 \x01(\v2\x0f.ship.v1.DemoteH\x00R\x06demoteB\t\n" +
 	"\apayload\"0\n" +
 	"\x06Resize\x12\x12\n" +
 	"\x04cols\x18\x01 \x01(\rR\x04cols\x12\x12\n" +
@@ -300,7 +481,16 @@ const file_internal_api_control_proto_rawDesc = "" +
 	"\bKIND_INT\x10\x02\x12\r\n" +
 	"\tKIND_TERM\x10\x03\x12\r\n" +
 	"\tKIND_USR1\x10\x04\x12\r\n" +
-	"\tKIND_USR2\x10\x05B6Z4github.com/firefly-engineering/ship/internal/api;apib\x06proto3"
+	"\tKIND_USR2\x10\x05\"\xab\x01\n" +
+	"\aSetMode\x12)\n" +
+	"\x04kind\x18\x01 \x01(\x0e2\x15.ship.v1.SetMode.KindR\x04kind\"u\n" +
+	"\x04Kind\x12\x14\n" +
+	"\x10KIND_UNSPECIFIED\x10\x00\x12\x12\n" +
+	"\x0eKIND_SUPERSEDE\x10\x01\x12\x12\n" +
+	"\x0eKIND_EXCLUSIVE\x10\x02\x12\x19\n" +
+	"\x15KIND_PRIMARY_OBSERVER\x10\x03\x12\x14\n" +
+	"\x10KIND_MULTI_WRITE\x10\x04\"\b\n" +
+	"\x06DemoteB6Z4github.com/firefly-engineering/ship/internal/api;apib\x06proto3"
 
 var (
 	file_internal_api_control_proto_rawDescOnce sync.Once
@@ -314,23 +504,29 @@ func file_internal_api_control_proto_rawDescGZIP() []byte {
 	return file_internal_api_control_proto_rawDescData
 }
 
-var file_internal_api_control_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_internal_api_control_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
+var file_internal_api_control_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
+var file_internal_api_control_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
 var file_internal_api_control_proto_goTypes = []any{
 	(Signal_Kind)(0),       // 0: ship.v1.Signal.Kind
-	(*ControlMessage)(nil), // 1: ship.v1.ControlMessage
-	(*Resize)(nil),         // 2: ship.v1.Resize
-	(*Signal)(nil),         // 3: ship.v1.Signal
+	(SetMode_Kind)(0),      // 1: ship.v1.SetMode.Kind
+	(*ControlMessage)(nil), // 2: ship.v1.ControlMessage
+	(*Resize)(nil),         // 3: ship.v1.Resize
+	(*Signal)(nil),         // 4: ship.v1.Signal
+	(*SetMode)(nil),        // 5: ship.v1.SetMode
+	(*Demote)(nil),         // 6: ship.v1.Demote
 }
 var file_internal_api_control_proto_depIdxs = []int32{
-	2, // 0: ship.v1.ControlMessage.resize:type_name -> ship.v1.Resize
-	3, // 1: ship.v1.ControlMessage.signal:type_name -> ship.v1.Signal
-	0, // 2: ship.v1.Signal.kind:type_name -> ship.v1.Signal.Kind
-	3, // [3:3] is the sub-list for method output_type
-	3, // [3:3] is the sub-list for method input_type
-	3, // [3:3] is the sub-list for extension type_name
-	3, // [3:3] is the sub-list for extension extendee
-	0, // [0:3] is the sub-list for field type_name
+	3, // 0: ship.v1.ControlMessage.resize:type_name -> ship.v1.Resize
+	4, // 1: ship.v1.ControlMessage.signal:type_name -> ship.v1.Signal
+	5, // 2: ship.v1.ControlMessage.set_mode:type_name -> ship.v1.SetMode
+	6, // 3: ship.v1.ControlMessage.demote:type_name -> ship.v1.Demote
+	0, // 4: ship.v1.Signal.kind:type_name -> ship.v1.Signal.Kind
+	1, // 5: ship.v1.SetMode.kind:type_name -> ship.v1.SetMode.Kind
+	6, // [6:6] is the sub-list for method output_type
+	6, // [6:6] is the sub-list for method input_type
+	6, // [6:6] is the sub-list for extension type_name
+	6, // [6:6] is the sub-list for extension extendee
+	0, // [0:6] is the sub-list for field type_name
 }
 
 func init() { file_internal_api_control_proto_init() }
@@ -341,14 +537,16 @@ func file_internal_api_control_proto_init() {
 	file_internal_api_control_proto_msgTypes[0].OneofWrappers = []any{
 		(*ControlMessage_Resize)(nil),
 		(*ControlMessage_Signal)(nil),
+		(*ControlMessage_SetMode)(nil),
+		(*ControlMessage_Demote)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_internal_api_control_proto_rawDesc), len(file_internal_api_control_proto_rawDesc)),
-			NumEnums:      1,
-			NumMessages:   3,
+			NumEnums:      2,
+			NumMessages:   5,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

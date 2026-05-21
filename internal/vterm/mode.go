@@ -1,6 +1,10 @@
 package vterm
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/firefly-engineering/ship/internal/api"
+)
 
 // Mode controls how a vterm.Session accepts and manages concurrent
 // attach clients.
@@ -80,5 +84,24 @@ func ParseMode(s string) (Mode, error) {
 		return ModeMultiWrite, nil
 	default:
 		return ModeUnspecified, fmt.Errorf("vterm: unknown mode %q (have: supersede, exclusive, primary-observer, multi-write)", s)
+	}
+}
+
+// modeFromAPI maps an [api.SetMode_Kind] to the corresponding
+// [Mode]. Returns ModeUnspecified for unknown kinds — callers
+// should treat the unspecified result as a no-op (silently ignore
+// the SetMode message).
+func modeFromAPI(k api.SetMode_Kind) Mode {
+	switch k {
+	case api.SetMode_KIND_SUPERSEDE:
+		return ModeSupersede
+	case api.SetMode_KIND_EXCLUSIVE:
+		return ModeExclusive
+	case api.SetMode_KIND_PRIMARY_OBSERVER:
+		return ModePrimaryObserver
+	case api.SetMode_KIND_MULTI_WRITE:
+		return ModeMultiWrite
+	default:
+		return ModeUnspecified
 	}
 }

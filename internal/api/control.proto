@@ -23,6 +23,8 @@ message ControlMessage {
   oneof payload {
     Resize resize = 1;
     Signal signal = 2;
+    SetMode set_mode = 3;
+    Demote demote = 4;
   }
 }
 
@@ -49,3 +51,28 @@ message Signal {
   }
   Kind kind = 1;
 }
+
+// SetMode switches the vterm session's multi-client mode at
+// runtime. Owner-only — vterm silently drops the message from any
+// client whose [Identity] doesn't hold the Owner capability. The
+// new mode applies to *future* attaches; existing clients keep
+// their current permissions (use Demote to step down, future
+// Kick/Promote RPCs to manage others).
+message SetMode {
+  enum Kind {
+    KIND_UNSPECIFIED = 0;
+    KIND_SUPERSEDE = 1;
+    KIND_EXCLUSIVE = 2;
+    KIND_PRIMARY_OBSERVER = 3;
+    KIND_MULTI_WRITE = 4;
+  }
+  Kind kind = 1;
+}
+
+// Demote is the self-service write-permission drop. The client
+// sending Demote loses its write + resize permissions; if it
+// happened to hold the PrimaryObserver writer seat, the seat
+// becomes vacant (no auto-promotion). Useful for "going AFK; don't
+// let me typo into prod." No cap required — any client can demote
+// itself.
+message Demote {}

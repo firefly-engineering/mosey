@@ -236,6 +236,37 @@ func (s *Session) recomputeGeometryAfterRemoveLocked() {
 // (a misbehaving client or a race during teardown).
 var errResizeNoClient = fmt.Errorf("resize: no PTY client for remote")
 
+// setMode swaps the session's active mode. Owner-only; the
+// handler gates the check before calling this. The change applies
+// to *future* attaches — existing clients keep their permissions
+// so the running attach doesn't suddenly lose its terminal mid-
+// command. Returns the prior mode for logging.
+func (s *Session) setMode(m Mode) Mode {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	prev := s.mode
+	s.mode = m
+	return prev
+}
+
+// demoteRemote drops the write capability of the client matching
+// remote. If that client was the PrimaryObserver writer, the seat
+// becomes vacant. Returns true when a client was found + demoted,
+// false when no client matched (rare race during teardown).
+func (s *Session) demoteRemote(remote string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	c := s.clientByRemoteIDLocked(remote)
+	if c == nil {
+		return false
+	}
+	c.canWrite = false
+	if s.writerID == c.id {
+		s.writerID = 0
+	}
+	return true
+}
+
 // removeClient drops a client from the registry and fires its
 // kick if it hadn't already. Safe to call from the handler's
 // defer regardless of who initiated the disconnect. Triggers a

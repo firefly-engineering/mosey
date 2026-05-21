@@ -55,6 +55,24 @@ func (s *Session) handleControl(stream transport.Stream) {
 			if err := s.applySignal(payload.Signal); err != nil {
 				s.logger.Warn("control signal", "peer", remote, "err", err)
 			}
+		case *api.ControlMessage_SetMode:
+			if !identity.IsOwner() {
+				s.logger.Info("control set_mode denied (no Owner cap)", "peer", remote, "role", identity.Label)
+				continue
+			}
+			newMode := modeFromAPI(payload.SetMode.GetKind())
+			if newMode == ModeUnspecified {
+				s.logger.Warn("control set_mode: unspecified kind", "peer", remote)
+				continue
+			}
+			prev := s.setMode(newMode)
+			s.logger.Info("mode switched", "peer", remote, "from", prev, "to", newMode)
+		case *api.ControlMessage_Demote:
+			if !s.demoteRemote(remote) {
+				s.logger.Debug("control demote: no PTY client for remote", "peer", remote)
+				continue
+			}
+			s.logger.Info("client self-demoted to observer", "peer", remote)
 		default:
 			s.logger.Warn("control: unknown payload", "peer", remote, "type", fmt.Sprintf("%T", payload))
 		}
