@@ -25,6 +25,7 @@ import (
 	httpbackend "github.com/firefly-engineering/mosey/internal/transport/http2"
 	libp2pbackend "github.com/firefly-engineering/mosey/internal/transport/libp2p"
 	unixbackend "github.com/firefly-engineering/mosey/internal/transport/unix"
+	wsbackend "github.com/firefly-engineering/mosey/internal/transport/websocket"
 )
 
 // runControl dispatches `mosey control <subcmd>`. Each subcommand
@@ -120,8 +121,16 @@ func dialControl(ctx context.Context, cf *controlFlags, target string) (transpor
 		_ = libp2pBackend.Close()
 		return nil, nil, fmt.Errorf("unix backend: %w", err)
 	}
-	multi, err := transport.Multi(libp2pBackend, httpBackend, unixBackend)
+	wsBackend, err := wsbackend.New(ctx, wsbackend.Options{InsecureSkipVerify: cf.insecureTLS})
 	if err != nil {
+		_ = unixBackend.Close()
+		_ = httpBackend.Close()
+		_ = libp2pBackend.Close()
+		return nil, nil, fmt.Errorf("websocket backend: %w", err)
+	}
+	multi, err := transport.Multi(libp2pBackend, httpBackend, unixBackend, wsBackend)
+	if err != nil {
+		_ = wsBackend.Close()
 		_ = unixBackend.Close()
 		_ = httpBackend.Close()
 		_ = libp2pBackend.Close()
@@ -130,6 +139,7 @@ func dialControl(ctx context.Context, cf *controlFlags, target string) (transpor
 	authed := auth.Wrap(multi, authenticator)
 	s, err := authed.Dial(ctx, target, api.ProtoControl)
 	if err != nil {
+		_ = wsBackend.Close()
 		_ = unixBackend.Close()
 		_ = httpBackend.Close()
 		_ = libp2pBackend.Close()
@@ -137,6 +147,7 @@ func dialControl(ctx context.Context, cf *controlFlags, target string) (transpor
 	}
 	cleanup := func() {
 		_ = s.Close()
+		_ = wsBackend.Close()
 		_ = unixBackend.Close()
 		_ = httpBackend.Close()
 		_ = libp2pBackend.Close()

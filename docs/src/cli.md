@@ -23,8 +23,8 @@ Runs `PROGRAM` under a PTY and announces listeners.
 | `--cert=...` / `--key=...` / `--master-pub=...` / `--workspace=ID` | Cert auth. See [auth](auth.md). |
 | `--revocation-file=PATH` | File of cert serials to reject. SIGHUP reloads. |
 | `--mode=MODE` | Multi-client policy: `supersede` (default), `exclusive`, `primary-observer`, `multi-write`. See [modes](multi-client.md). |
-| `--listen=URI` | Repeatable. `libp2p://` (default — random TCP + QUIC ports), `http://host:port` (h2c), `https://host:port` (TLS), or `unix:///path/to/sock` (same-host). |
-| `--http-cert` / `--http-key` | Required when any `--listen` is `https://`. |
+| `--listen=URI` | Repeatable. `libp2p://` (default — random TCP + QUIC ports), `http://host:port` (h2c), `https://host:port` (TLS), `unix:///path/to/sock` (same-host), `ws://host:port` (browser cleartext), or `wss://host:port` (browser TLS). |
+| `--http-cert` / `--http-key` | Required when any `--listen` is `https://` or `wss://`. |
 | `--no-p2p-bootstrap` | Skip the IPFS public bootstrap set. LAN-only / offline use. |
 | `--log-level` | `debug` \| `info` \| `warn` (default) \| `error`. |
 

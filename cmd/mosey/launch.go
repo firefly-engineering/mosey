@@ -26,6 +26,7 @@ import (
 	httpbackend "github.com/firefly-engineering/mosey/internal/transport/http2"
 	libp2pbackend "github.com/firefly-engineering/mosey/internal/transport/libp2p"
 	unixbackend "github.com/firefly-engineering/mosey/internal/transport/unix"
+	wsbackend "github.com/firefly-engineering/mosey/internal/transport/websocket"
 	"github.com/firefly-engineering/mosey/internal/vterm"
 )
 
@@ -37,10 +38,10 @@ func runLaunch(args []string, stderr *os.File) int {
 	var certCfg certflags.Flags
 	certCfg.Register(fs)
 	mode := fs.String("mode", "supersede", "multi-client mode: supersede (newest wins) | exclusive (one at a time) | primary-observer (first writer + observers) | multi-write (everyone types)")
-	httpCert := fs.String("http-cert", "", "PEM-encoded TLS cert path for https:// listeners. Required for https:// in --listen; h2c (http://) listens without it.")
+	httpCert := fs.String("http-cert", "", "PEM-encoded TLS cert path for https:// and wss:// listeners. Required for either scheme in --listen; h2c (http://) and ws:// listen without it.")
 	httpKey := fs.String("http-key", "", "PEM-encoded TLS private key path matching --http-cert.")
 	listens := stringSliceFlag{}
-	fs.Var(&listens, "listen", "backend listener; repeatable. Forms: libp2p:// (default — random TCP+QUIC ports) | http://host:port (h2c) | https://host:port (TLS — requires --http-cert/--http-key) | unix:///path/to/sock (same-host).")
+	fs.Var(&listens, "listen", "backend listener; repeatable. Forms: libp2p:// (default — random TCP+QUIC ports) | http://host:port (h2c) | https://host:port (TLS — requires --http-cert/--http-key) | unix:///path/to/sock (same-host) | ws://host:port (browser cleartext) | wss://host:port (browser TLS — requires --http-cert/--http-key).")
 	noBootstrap := fs.Bool("no-p2p-bootstrap", false, "skip the IPFS public bootstrap set; useful for LAN-only / offline testing")
 	logLevel := fs.String("log-level", "warn", "slog level: debug|info|warn|error")
 
@@ -271,8 +272,41 @@ func buildBackends(ctx context.Context, listens []string, noBootstrap bool, http
 				return nil, fmt.Errorf("--listen=%q: %w", raw, err)
 			}
 			out = append(out, b)
+		case wsbackend.SchemeWS:
+			addr := u.Host
+			if addr == "" {
+				addr = "0.0.0.0:0"
+			}
+			b, err := wsbackend.New(ctx, wsbackend.Options{ListenAddr: addr})
+			if err != nil {
+				return nil, fmt.Errorf("--listen=%q: %w", raw, err)
+			}
+			out = append(out, b)
+		case wsbackend.SchemeWSS:
+			if httpCertPath == "" || httpKeyPath == "" {
+				return nil, fmt.Errorf("--listen=%q: --http-cert and --http-key are required for wss:// listeners", raw)
+			}
+			cert, err := tls.LoadX509KeyPair(httpCertPath, httpKeyPath)
+			if err != nil {
+				return nil, fmt.Errorf("--listen=%q: load cert / key: %w", raw, err)
+			}
+			addr := u.Host
+			if addr == "" {
+				addr = "0.0.0.0:0"
+			}
+			b, err := wsbackend.New(ctx, wsbackend.Options{
+				ListenAddr: addr,
+				TLSConfig: &tls.Config{
+					Certificates: []tls.Certificate{cert},
+					MinVersion:   tls.VersionTLS12,
+				},
+			})
+			if err != nil {
+				return nil, fmt.Errorf("--listen=%q: %w", raw, err)
+			}
+			out = append(out, b)
 		default:
-			return nil, fmt.Errorf("--listen=%q: unknown scheme %q (have: libp2p, http, https, unix)", raw, u.Scheme)
+			return nil, fmt.Errorf("--listen=%q: unknown scheme %q (have: libp2p, http, https, unix, ws, wss)", raw, u.Scheme)
 		}
 	}
 	return out, nil

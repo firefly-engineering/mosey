@@ -1,7 +1,7 @@
 # Transports
 
 The `transport.Transport` interface is the only surface higher
-layers depend on. Three backends are included today; new ones plug
+layers depend on. Four backends are included today; new ones plug
 in by implementing the same shape.
 
 ```go
@@ -112,6 +112,69 @@ Limitations:
 - Stale socket files from a crashed launcher are removed on
   `New()`; co-located launchers on the same path will race.
 
+## WebSocket backend
+
+[`internal/transport/websocket`](../../internal/transport/websocket/)
+speaks the `ws://` (cleartext) and `wss://` (TLS) schemes. The
+target audience is **browser clients** — every browser ships the
+`new WebSocket(url, protocols)` API, and the wire format goes
+through any standard HTTP(S) infrastructure (reverse proxies,
+ingresses, CDNs, corporate TLS terminators).
+
+```sh
+mosey launch --secret=hunter2 --listen=wss://0.0.0.0:8443 \
+    --http-cert=./cert.pem --http-key=./key.pem -- bash
+mosey attach --secret=hunter2 wss://host:8443
+```
+
+Wire model: one WebSocket per stream. On `Dial` the client opens
+`wss://host/<protocol-id>` (the mosey protocol id rides in the URL
+path the way it does in the HTTP/2 backend). Each `Stream.Write`
+emits a single binary frame; `Stream.Read` consumes the next
+binary message in order. The Subprotocols / Origin / TLS handshake
+is all standard browser-compatible WebSocket — no custom
+extensions.
+
+Identity correlation across the auth → application stream
+sequence works the same way the unix backend does, but the
+vehicle is the only client-controlled handshake field the browser
+exposes: `Sec-WebSocket-Protocol`. Each dialer mints a random
+128-bit token at construction and offers it as
+`mosey-peer-<hex>`; the server reads it off the upgrade request
+and exposes it as `Stream.RemoteID()`. Same caller backend ⇒ same
+RemoteID ⇒ `auth.Wrap` correlates correctly.
+
+Limitations:
+
+- No half-close. WebSocket's Close frame is full-connection, not
+  per-direction; `Stream.CloseWrite()` returns
+  `transport.ErrUnsupported`. mosey's existing callers don't need
+  half-close, so this is mostly a future-proofing note.
+- Per-stream connection cost is higher than libp2p or unix
+  (TLS handshake + HTTP upgrade per stream). mosey opens roughly
+  three streams per attach (auth + pty + control), so the
+  overhead is a one-time cost, not per-byte.
+
+### Using it from a browser
+
+The wire format is plain WebSocket binary frames. A minimal JS
+client looks like:
+
+```js
+const token = crypto.randomUUID().replace(/-/g, "");
+const ws = new WebSocket("wss://host:8443/mosey/pty/1.0.0",
+                         [`mosey-peer-${token}`]);
+ws.binaryType = "arraybuffer";
+// ... drive auth handshake + PTY bytes
+```
+
+The companion auth and control protocols live on the same
+host:port under their own paths (`/mosey/auth/1.0.0`,
+`/mosey/control/1.0.0`). A browser-side mosey client also needs to
+speak the application-layer auth handshake — that lives in
+`internal/auth/` and isn't yet packaged for JS. Treat the wire
+spec in [design.md](design.md) as authoritative until then.
+
 ## When to use which
 
 | Constraint | Backend |
@@ -119,10 +182,11 @@ Limitations:
 | Same-host attach (one daemon + local attacher) | unix (`--listen=unix:///path`) |
 | Two LAN hosts, no config | libp2p (`mosey launch` with no `--listen` picks libp2p:// by default) |
 | Two hosts on different networks, NAT each side | libp2p (relies on DCUtR) |
-| Browser bridge, or behind a corporate HTTPS-only proxy | http2 (`--listen=https://...`) |
-| Want both at once | both — repeat `--listen` |
+| Browser client | websocket (`--listen=wss://...`) |
+| Behind a corporate HTTPS-only proxy | http2 (`--listen=https://...`) or websocket (depending on what the proxy upgrades) |
+| Want both at once | repeat `--listen` |
 | Air-gapped LAN | libp2p with `--no-p2p-bootstrap` |
-| Want existing TLS infra (cert pinning, mTLS, ALB) | http2 |
+| Want existing TLS infra (cert pinning, mTLS, ALB) | http2 or websocket |
 | Want to skip the network entirely for embedded use | unix |
 
 ## Implementing a new backend
