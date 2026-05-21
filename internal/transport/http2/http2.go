@@ -29,7 +29,7 @@ import (
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
 
-	"github.com/firefly-engineering/ship/internal/transport"
+	"github.com/firefly-engineering/mosey/internal/transport"
 )
 
 // Scheme constants this backend claims under [transport.Multi].

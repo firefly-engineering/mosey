@@ -842,7 +842,7 @@ const file_internal_api_control_proto_rawDesc = "" +
 	"\aPromote\x12\x1b\n" +
 	"\tclient_id\x18\x01 \x01(\x03R\bclientId\"#\n" +
 	"\x04Kick\x12\x1b\n" +
-	"\tclient_id\x18\x01 \x01(\x03R\bclientIdB6Z4github.com/firefly-engineering/ship/internal/api;apib\x06proto3"
+	"\tclient_id\x18\x01 \x01(\x03R\bclientIdB7Z5github.com/firefly-engineering/mosey/internal/api;apib\x06proto3"
 
 var (
 	file_internal_api_control_proto_rawDescOnce sync.Once

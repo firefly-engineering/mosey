@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/firefly-engineering/ship/internal/auth"
+	"github.com/firefly-engineering/mosey/internal/auth"
 )
 
 func TestNewPSKAuth_RejectsEmptySecret(t *testing.T) {

@@ -7,7 +7,7 @@ syntax = "proto3";
 
 package ship.v1;
 
-option go_package = "github.com/firefly-engineering/ship/internal/api;api";
+option go_package = "github.com/firefly-engineering/mosey/internal/api;api";
 
 // ControlMessage is the envelope carried on /ship/control/. Each
 // frame is length-delimited (varint length prefix + serialized

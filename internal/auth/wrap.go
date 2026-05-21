@@ -7,8 +7,8 @@ import (
 	"io"
 	"sync"
 
-	"github.com/firefly-engineering/ship/internal/api"
-	"github.com/firefly-engineering/ship/internal/transport"
+	"github.com/firefly-engineering/mosey/internal/api"
+	"github.com/firefly-engineering/mosey/internal/transport"
 )
 
 // Wrap returns a [transport.Transport] that runs the supplied

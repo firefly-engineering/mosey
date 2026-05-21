@@ -8,9 +8,9 @@ import (
 
 	"google.golang.org/protobuf/encoding/protodelim"
 
-	"github.com/firefly-engineering/ship/internal/api"
-	"github.com/firefly-engineering/ship/internal/auth"
-	"github.com/firefly-engineering/ship/internal/vterm"
+	"github.com/firefly-engineering/mosey/internal/api"
+	"github.com/firefly-engineering/mosey/internal/auth"
+	"github.com/firefly-engineering/mosey/internal/vterm"
 )
 
 // TestGeometry_MinAcrossClients confirms that in a multi-client

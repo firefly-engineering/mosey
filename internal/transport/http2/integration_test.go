@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/firefly-engineering/ship/internal/transport"
-	"github.com/firefly-engineering/ship/internal/transport/http2"
+	"github.com/firefly-engineering/mosey/internal/transport"
+	"github.com/firefly-engineering/mosey/internal/transport/http2"
 )
 
 // TestBackend_RoundTrip stands up a single backend bound to a

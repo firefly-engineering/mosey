@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/firefly-engineering/ship/internal/cert"
+	"github.com/firefly-engineering/mosey/internal/cert"
 )
 
 func TestNewMasterMnemonic_24Words(t *testing.T) {

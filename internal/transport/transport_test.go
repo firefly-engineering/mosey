@@ -7,7 +7,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/firefly-engineering/ship/internal/transport"
+	"github.com/firefly-engineering/mosey/internal/transport"
 )
 
 // fakeTransport is a hand-rolled stub implementing [transport.Transport]

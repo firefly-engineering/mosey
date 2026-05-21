@@ -426,7 +426,7 @@ const file_internal_api_cert_proto_rawDesc = "" +
 	"\x04cert\x18\x01 \x01(\v2\r.ship.v1.CertR\x04cert\x12\x14\n" +
 	"\x05nonce\x18\x02 \x01(\fR\x05nonce\"+\n" +
 	"\vSignedNonce\x12\x1c\n" +
-	"\tsignature\x18\x01 \x01(\fR\tsignatureB6Z4github.com/firefly-engineering/ship/internal/api;apib\x06proto3"
+	"\tsignature\x18\x01 \x01(\fR\tsignatureB7Z5github.com/firefly-engineering/mosey/internal/api;apib\x06proto3"
 
 var (
 	file_internal_api_cert_proto_rawDescOnce sync.Once

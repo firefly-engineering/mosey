@@ -9,9 +9,9 @@ import (
 
 	"github.com/creack/pty"
 
-	"github.com/firefly-engineering/ship/internal/auth"
-	"github.com/firefly-engineering/ship/internal/streambuf"
-	"github.com/firefly-engineering/ship/internal/transport"
+	"github.com/firefly-engineering/mosey/internal/auth"
+	"github.com/firefly-engineering/mosey/internal/streambuf"
+	"github.com/firefly-engineering/mosey/internal/transport"
 )
 
 // applyPTYSize updates the PTY winsize via TIOCSWINSZ. Caller

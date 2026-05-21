@@ -14,9 +14,9 @@ import (
 
 	"google.golang.org/protobuf/proto"
 
-	"github.com/firefly-engineering/ship/internal/api"
-	"github.com/firefly-engineering/ship/internal/auth"
-	"github.com/firefly-engineering/ship/internal/cert"
+	"github.com/firefly-engineering/mosey/internal/api"
+	"github.com/firefly-engineering/mosey/internal/auth"
+	"github.com/firefly-engineering/mosey/internal/cert"
 )
 
 // Flags is the bundle of cert-auth-related CLI inputs. Bind to a

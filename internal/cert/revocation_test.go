@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/firefly-engineering/ship/internal/cert"
+	"github.com/firefly-engineering/mosey/internal/cert"
 )
 
 func TestLoadRevocationFile_MissingFileReturnsEmpty(t *testing.T) {

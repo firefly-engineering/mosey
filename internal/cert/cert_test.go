@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/firefly-engineering/ship/internal/cert"
+	"github.com/firefly-engineering/mosey/internal/cert"
 )
 
 func newKey(t *testing.T) (ed25519.PublicKey, ed25519.PrivateKey) {

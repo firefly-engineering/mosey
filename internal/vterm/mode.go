@@ -3,7 +3,7 @@ package vterm
 import (
 	"fmt"
 
-	"github.com/firefly-engineering/ship/internal/api"
+	"github.com/firefly-engineering/mosey/internal/api"
 )
 
 // Mode controls how a vterm.Session accepts and manages concurrent

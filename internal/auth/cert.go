@@ -12,8 +12,8 @@ import (
 
 	"google.golang.org/protobuf/encoding/protodelim"
 
-	"github.com/firefly-engineering/ship/internal/api"
-	"github.com/firefly-engineering/ship/internal/cert"
+	"github.com/firefly-engineering/mosey/internal/api"
+	"github.com/firefly-engineering/mosey/internal/cert"
 )
 
 // certNonceSize is the per-direction proof-of-control challenge

@@ -19,7 +19,7 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	"github.com/firefly-engineering/ship/internal/api"
+	"github.com/firefly-engineering/mosey/internal/api"
 )
 
 // CapsBit values mirror the bit positions in

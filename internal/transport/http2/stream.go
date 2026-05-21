@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"sync"
 
-	"github.com/firefly-engineering/ship/internal/transport"
+	"github.com/firefly-engineering/mosey/internal/transport"
 )
 
 // clientStream is the dialer-side [transport.Stream]: writes flow

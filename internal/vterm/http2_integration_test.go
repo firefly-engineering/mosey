@@ -7,10 +7,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/firefly-engineering/ship/internal/attach"
-	"github.com/firefly-engineering/ship/internal/auth"
-	httpbackend "github.com/firefly-engineering/ship/internal/transport/http2"
-	"github.com/firefly-engineering/ship/internal/vterm"
+	"github.com/firefly-engineering/mosey/internal/attach"
+	"github.com/firefly-engineering/mosey/internal/auth"
+	httpbackend "github.com/firefly-engineering/mosey/internal/transport/http2"
+	"github.com/firefly-engineering/mosey/internal/vterm"
 )
 
 // TestVterm_HTTP2_AttachRoundTrip is the libp2p AttachRoundTrip

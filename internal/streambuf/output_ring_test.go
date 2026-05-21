@@ -6,7 +6,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/firefly-engineering/ship/internal/streambuf"
+	"github.com/firefly-engineering/mosey/internal/streambuf"
 )
 
 func TestOutputRing_DefaultCapacity(t *testing.T) {

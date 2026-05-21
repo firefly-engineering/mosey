@@ -9,10 +9,10 @@ import (
 
 	"github.com/libp2p/go-libp2p/core/peer"
 
-	"github.com/firefly-engineering/ship/internal/attach"
-	"github.com/firefly-engineering/ship/internal/auth"
-	libp2pbackend "github.com/firefly-engineering/ship/internal/transport/libp2p"
-	"github.com/firefly-engineering/ship/internal/vterm"
+	"github.com/firefly-engineering/mosey/internal/attach"
+	"github.com/firefly-engineering/mosey/internal/auth"
+	libp2pbackend "github.com/firefly-engineering/mosey/internal/transport/libp2p"
+	"github.com/firefly-engineering/mosey/internal/vterm"
 )
 
 // TestVterm_ReaderSecretIsObserverOnly stands up a vterm with both

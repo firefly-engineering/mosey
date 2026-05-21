@@ -9,7 +9,7 @@ import (
 
 	"github.com/libp2p/go-libp2p/core/network"
 
-	"github.com/firefly-engineering/ship/internal/transport"
+	"github.com/firefly-engineering/mosey/internal/transport"
 )
 
 func TestIsExpectedShutdown(t *testing.T) {

@@ -2,7 +2,7 @@
 // and attach. Protocol IDs live here so a typo in one binary can't
 // silently miss a stream handler in the other.
 //
-//go:generate protoc --go_out=../../ --go_opt=module=github.com/firefly-engineering/ship control.proto
+//go:generate protoc --go_out=../../ --go_opt=module=github.com/firefly-engineering/mosey control.proto
 package api
 
 // Protocol IDs are plain strings so any backend (libp2p, http2,

@@ -24,9 +24,9 @@ import (
 
 	"github.com/creack/pty"
 
-	"github.com/firefly-engineering/ship/internal/api"
-	"github.com/firefly-engineering/ship/internal/streambuf"
-	"github.com/firefly-engineering/ship/internal/transport"
+	"github.com/firefly-engineering/mosey/internal/api"
+	"github.com/firefly-engineering/mosey/internal/streambuf"
+	"github.com/firefly-engineering/mosey/internal/transport"
 )
 
 // Session is a running vterm: a child process under a PTY, plus

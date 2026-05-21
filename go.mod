@@ -1,4 +1,4 @@
-module github.com/firefly-engineering/ship
+module github.com/firefly-engineering/mosey
 
 go 1.26.2
 

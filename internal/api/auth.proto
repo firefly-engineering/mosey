@@ -21,7 +21,7 @@ syntax = "proto3";
 
 package ship.v1;
 
-option go_package = "github.com/firefly-engineering/ship/internal/api;api";
+option go_package = "github.com/firefly-engineering/mosey/internal/api;api";
 
 message AuthMessage {
   oneof kind {

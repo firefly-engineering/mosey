@@ -14,7 +14,7 @@ import (
 	"golang.org/x/crypto/hkdf"
 	"google.golang.org/protobuf/encoding/protodelim"
 
-	"github.com/firefly-engineering/ship/internal/api"
+	"github.com/firefly-engineering/mosey/internal/api"
 )
 
 // HKDF info parameter used when deriving the per-entry HMAC key

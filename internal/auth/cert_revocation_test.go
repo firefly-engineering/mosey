@@ -7,8 +7,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/firefly-engineering/ship/internal/auth"
-	"github.com/firefly-engineering/ship/internal/cert"
+	"github.com/firefly-engineering/mosey/internal/auth"
+	"github.com/firefly-engineering/mosey/internal/cert"
 )
 
 // TestCertAuth_UpdateRevoked_RejectsAfterMutation verifies that

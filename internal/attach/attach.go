@@ -26,8 +26,8 @@ import (
 
 	"golang.org/x/term"
 
-	"github.com/firefly-engineering/ship/internal/api"
-	"github.com/firefly-engineering/ship/internal/transport"
+	"github.com/firefly-engineering/mosey/internal/api"
+	"github.com/firefly-engineering/mosey/internal/transport"
 )
 
 // reconnectInitialDelay / Max bound the exponential backoff used

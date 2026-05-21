@@ -36,13 +36,13 @@ import (
 
 	"github.com/libp2p/go-libp2p/core/peer"
 
-	"github.com/firefly-engineering/ship/cmd/internal/certflags"
-	"github.com/firefly-engineering/ship/internal/auth"
-	"github.com/firefly-engineering/ship/internal/cert"
-	"github.com/firefly-engineering/ship/internal/transport"
-	httpbackend "github.com/firefly-engineering/ship/internal/transport/http2"
-	libp2pbackend "github.com/firefly-engineering/ship/internal/transport/libp2p"
-	"github.com/firefly-engineering/ship/internal/vterm"
+	"github.com/firefly-engineering/mosey/cmd/internal/certflags"
+	"github.com/firefly-engineering/mosey/internal/auth"
+	"github.com/firefly-engineering/mosey/internal/cert"
+	"github.com/firefly-engineering/mosey/internal/transport"
+	httpbackend "github.com/firefly-engineering/mosey/internal/transport/http2"
+	libp2pbackend "github.com/firefly-engineering/mosey/internal/transport/libp2p"
+	"github.com/firefly-engineering/mosey/internal/vterm"
 )
 
 func main() {

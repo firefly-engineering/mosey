@@ -320,7 +320,7 @@ const file_internal_api_auth_proto_rawDesc = "" +
 	"\x05nonce\x18\x01 \x01(\fR\x05nonce\x12\x10\n" +
 	"\x03mac\x18\x02 \x01(\fR\x03mac\"\x1f\n" +
 	"\vClientProof\x12\x10\n" +
-	"\x03mac\x18\x01 \x01(\fR\x03macB6Z4github.com/firefly-engineering/ship/internal/api;apib\x06proto3"
+	"\x03mac\x18\x01 \x01(\fR\x03macB7Z5github.com/firefly-engineering/mosey/internal/api;apib\x06proto3"
 
 var (
 	file_internal_api_auth_proto_rawDescOnce sync.Once

@@ -15,8 +15,8 @@ import (
 	"golang.org/x/term"
 	"google.golang.org/protobuf/encoding/protodelim"
 
-	"github.com/firefly-engineering/ship/internal/api"
-	"github.com/firefly-engineering/ship/internal/transport"
+	"github.com/firefly-engineering/mosey/internal/api"
+	"github.com/firefly-engineering/mosey/internal/transport"
 )
 
 // controlClient wraps the [api.ProtoControl] stream and exposes
