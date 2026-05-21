@@ -49,7 +49,8 @@ func main() {
 func run(args []string, stderr *os.File) int {
 	fs := flag.NewFlagSet("vterm", flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	secret := fs.String("secret", "", "shared PSK; required, must match the attach side")
+	secret := fs.String("secret", "", "owner PSK; required. Attachers presenting this secret get full write + resize.")
+	readerSecret := fs.String("reader-secret", "", "optional reader PSK; attachers presenting it get observer (no write, no resize) access.")
 	listens := stringSliceFlag{}
 	fs.Var(&listens, "listen", "backend listener; repeatable. Forms: libp2p:// (default — random TCP+QUIC ports) | http://host:port (h2c).")
 	noBootstrap := fs.Bool("no-p2p-bootstrap", false, "skip the IPFS public bootstrap set; useful for LAN-only / offline testing")
@@ -77,7 +78,23 @@ func run(args []string, stderr *os.File) int {
 
 	logger := newLogger(stderr, *logLevel)
 
-	psk, err := auth.NewPSKAuth(*secret)
+	pskEntries := []auth.NamedSecret{{
+		Label:  auth.LabelOwner,
+		Secret: *secret,
+		Caps:   auth.Capabilities{Owner: true, Write: true, Resize: true},
+	}}
+	if *readerSecret != "" {
+		if *readerSecret == *secret {
+			fmt.Fprintln(stderr, "vterm: --reader-secret must differ from --secret")
+			return 2
+		}
+		pskEntries = append(pskEntries, auth.NamedSecret{
+			Label:  auth.LabelReader,
+			Secret: *readerSecret,
+			Caps:   auth.Capabilities{}, // observer
+		})
+	}
+	psk, err := auth.NewMultiPSKAuth(pskEntries)
 	if err != nil {
 		fmt.Fprintln(stderr, "vterm:", err)
 		return 2

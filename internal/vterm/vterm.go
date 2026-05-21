@@ -23,6 +23,7 @@ import (
 	"github.com/creack/pty"
 
 	"github.com/firefly-engineering/ship/internal/api"
+	"github.com/firefly-engineering/ship/internal/auth"
 	"github.com/firefly-engineering/ship/internal/transport"
 )
 
@@ -114,9 +115,17 @@ func Run(ctx context.Context, opts Options, argv []string) error {
 // goroutines copy bytes in either direction; returning when one
 // side reaches EOF / errors. Clean shutdown closes the stream
 // (peer's read returns EOF); only true errors Reset.
+//
+// Identity gating: callers without the Write capability (observers)
+// still receive output but their input bytes are discarded — read
+// and dropped instead of forwarded to the PTY. Same wire posture
+// as a writer; the difference is invisible to the attaching
+// client's terminal (typing produces local echo but no remote
+// effect).
 func (s *Service) handlePTY(stream transport.Stream) {
 	remote := stream.RemoteID()
-	s.logger.Info("attach opened", "peer", remote)
+	identity := auth.IdentityOf(stream)
+	s.logger.Info("attach opened", "peer", remote, "role", identity.Label, "write", identity.CanWrite())
 
 	errc := make(chan error, 2)
 	go func() {
@@ -124,7 +133,11 @@ func (s *Service) handlePTY(stream transport.Stream) {
 		errc <- err
 	}()
 	go func() {
-		_, err := io.Copy(s.ptyf, stream)
+		var dst io.Writer = s.ptyf
+		if !identity.CanWrite() {
+			dst = io.Discard
+		}
+		_, err := io.Copy(dst, stream)
 		errc <- err
 	}()
 

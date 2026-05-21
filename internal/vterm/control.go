@@ -11,6 +11,7 @@ import (
 	"google.golang.org/protobuf/encoding/protodelim"
 
 	"github.com/firefly-engineering/ship/internal/api"
+	"github.com/firefly-engineering/ship/internal/auth"
 	"github.com/firefly-engineering/ship/internal/transport"
 )
 
@@ -22,7 +23,8 @@ import (
 // translates to a clean half-close or a forceful tear-down.
 func (s *Service) handleControl(stream transport.Stream) {
 	remote := stream.RemoteID()
-	s.logger.Info("control opened", "peer", remote)
+	identity := auth.IdentityOf(stream)
+	s.logger.Info("control opened", "peer", remote, "role", identity.Label)
 	defer func() {
 		_ = stream.Close()
 		s.logger.Info("control closed", "peer", remote)
@@ -39,10 +41,18 @@ func (s *Service) handleControl(stream transport.Stream) {
 		}
 		switch payload := msg.GetPayload().(type) {
 		case *api.ControlMessage_Resize:
+			if !identity.CanResize() {
+				s.logger.Debug("control resize denied (no Resize cap)", "peer", remote, "role", identity.Label)
+				continue
+			}
 			if err := s.applyResize(payload.Resize); err != nil {
 				s.logger.Warn("control resize", "peer", remote, "err", err)
 			}
 		case *api.ControlMessage_Signal:
+			if !identity.CanWrite() {
+				s.logger.Debug("control signal denied (no Write cap)", "peer", remote, "role", identity.Label)
+				continue
+			}
 			if err := s.applySignal(payload.Signal); err != nil {
 				s.logger.Warn("control signal", "peer", remote, "err", err)
 			}
