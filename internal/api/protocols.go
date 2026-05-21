@@ -24,6 +24,15 @@ const (
 	// and the child process's PTY master.
 	ProtoPTY = "/ship/pty/1.0.0"
 
+	// ProtoPTYResume is the reattach variant of ProtoPTY. The
+	// client's first message on the stream is a varint encoding
+	// the last sequence number it rendered locally; the vterm
+	// replays bytes from that point in its OutputRing before
+	// streaming live output. Used by attach.Run's reconnect loop
+	// so a flaky network doesn't leave the user staring at a
+	// black-screened TUI.
+	ProtoPTYResume = "/ship/pty-resume/1.0.0"
+
 	// ProtoControl carries length-delimited [ControlMessage] frames
 	// between the vterm and any attached clients. v1 messages:
 	// Resize (window size change) and Signal (process signal

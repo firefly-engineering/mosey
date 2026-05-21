@@ -20,6 +20,45 @@ func applyPTYSize(f *os.File, cols, rows uint32) error {
 	return pty.Setsize(f, &pty.Winsize{Cols: uint16(cols), Rows: uint16(rows)})
 }
 
+// readResumeSeq decodes the leading varint that a /ship/pty-resume/
+// client sends as its first bytes. Mirrors protowire's varint
+// shape so the wire is stable.
+func readResumeSeq(r io.Reader) (uint64, error) {
+	var result uint64
+	var shift uint
+	one := []byte{0}
+	for i := 0; i < 10; i++ { // varint max width for uint64
+		n, err := r.Read(one)
+		if n != 1 {
+			if err == nil {
+				err = io.ErrUnexpectedEOF
+			}
+			return 0, err
+		}
+		b := one[0]
+		result |= uint64(b&0x7f) << shift
+		if b&0x80 == 0 {
+			return result, nil
+		}
+		shift += 7
+	}
+	return 0, fmt.Errorf("resume_seq varint overflow")
+}
+
+// encodeResumeSeq is the encoder counterpart of [readResumeSeq].
+// Returns 1–10 bytes — proto-wire varint format.
+func encodeResumeSeq(v uint64) []byte {
+	var out [10]byte
+	i := 0
+	for v >= 0x80 {
+		out[i] = byte(v) | 0x80
+		v >>= 7
+		i++
+	}
+	out[i] = byte(v)
+	return out[:i+1]
+}
+
 // outputRingCapacity bounds the PTY-output replay buffer. ~256 KiB
 // is comfortably above a screenful of `top` and lets a freshly
 // attaching client see the last few seconds of output without

@@ -106,8 +106,10 @@ func Run(ctx context.Context, opts Options, argv []string) error {
 	}
 
 	opts.Transport.Handle(api.ProtoPTY, sess.handlePTY)
+	opts.Transport.Handle(api.ProtoPTYResume, sess.handlePTYResume)
 	opts.Transport.Handle(api.ProtoControl, sess.handleControl)
 	defer opts.Transport.Unhandle(api.ProtoPTY)
+	defer opts.Transport.Unhandle(api.ProtoPTYResume)
 	defer opts.Transport.Unhandle(api.ProtoControl)
 
 	logger.Info("vterm running",
@@ -137,11 +139,32 @@ func Run(ctx context.Context, opts Options, argv []string) error {
 	return nil
 }
 
-// handlePTY is the transport handler for [api.ProtoPTY]. Admits
-// the client via the mode-aware addClient gate, then drives two
-// goroutines: output drains the per-client outCh to the stream,
-// input drains the stream to the PTY (when permitted).
+// handlePTY is the transport handler for [api.ProtoPTY]. Fresh
+// attach — replays from sequence 0 so the client sees the full
+// retained OutputRing.
 func (s *Session) handlePTY(stream transport.Stream) {
+	s.bridgeClient(stream, 0)
+}
+
+// handlePTYResume is the transport handler for
+// [api.ProtoPTYResume]. The client's first message on the stream
+// is a varint encoding the last-rendered output sequence; we
+// replay from that point so a reconnecting attach picks up where
+// it left off.
+func (s *Session) handlePTYResume(stream transport.Stream) {
+	resume, err := readResumeSeq(stream)
+	if err != nil {
+		s.logger.Warn("pty-resume: bad header", "peer", stream.RemoteID(), "err", err)
+		_ = stream.Close()
+		return
+	}
+	s.bridgeClient(stream, resume)
+}
+
+// bridgeClient is the shared admission + I/O pump. fromSeq is the
+// sequence-number floor for the initial replay; 0 means "everything
+// the ring still has."
+func (s *Session) bridgeClient(stream transport.Stream, fromSeq uint64) {
 	remote := stream.RemoteID()
 	client := s.addClient(stream)
 	if client == nil {
@@ -156,18 +179,17 @@ func (s *Session) handlePTY(stream transport.Stream) {
 		"role", client.identity.Label,
 		"client_id", client.id,
 		"can_write", client.canWrite,
+		"resume_seq", fromSeq,
 	)
 	defer s.logger.Info("attach closed", "peer", remote, "client_id", client.id)
 
 	// Send initial replay so the client sees current screen state
-	// even if it attached mid-session. Wrapped in a goroutine via
-	// outCh so it interleaves correctly with live bytes.
-	if replay, _, err := s.output.From(0); err == nil && len(replay) > 0 {
+	// even if it attached mid-session. Wrapped via outCh so it
+	// interleaves correctly with live bytes.
+	if replay, _, err := s.output.From(fromSeq); err == nil && len(replay) > 0 {
 		select {
 		case client.outCh <- replay:
 		default:
-			// Initial buffer full somehow — happens only when
-			// outCh size < replay size, which is a misconfig.
 			client.dropped.Add(1)
 		}
 	}
