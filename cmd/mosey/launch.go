@@ -19,9 +19,9 @@ import (
 
 	"github.com/libp2p/go-libp2p/core/peer"
 
-	"github.com/firefly-engineering/mosey/cmd/internal/certflags"
 	"github.com/firefly-engineering/mosey/auth"
 	"github.com/firefly-engineering/mosey/cert"
+	"github.com/firefly-engineering/mosey/cmd/internal/certflags"
 	"github.com/firefly-engineering/mosey/transport"
 	httpbackend "github.com/firefly-engineering/mosey/transport/http2"
 	libp2pbackend "github.com/firefly-engineering/mosey/transport/libp2p"
