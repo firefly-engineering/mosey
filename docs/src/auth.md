@@ -136,3 +136,33 @@ runtime tightening by the [multi-client mode](multi-client.md) (a
 denied at the session layer until promoted). The cap set never
 widens at runtime — `mosey control promote` flips a session-layer
 flag, not the cap bits.
+
+## Identity semantics across backends
+
+`auth.Wrap` produces the same `Identity` shape on every backend.
+Handlers retrieve it with `auth.IdentityOf(stream)`, which returns
+the post-handshake `Identity` — the `Label` and `Caps` derived from
+whichever credential (PSK secret or cert) the client presented. The
+auth wrapper is responsible for that uniformity: each backend
+contributes only a *correlation key* (the value of
+`Stream.RemoteID()`) that lets the wrapper match the auth stream
+and the application stream from the same peer.
+
+| Backend | Correlation key (`Stream.RemoteID()`) |
+|---|---|
+| `libp2p` | The remote libp2p peer ID (multihash). Stable across the lifetime of the libp2p Host. |
+| `http2` | The remote TCP `host:port` of the dialer's HTTP/2 connection. Every stream the same client multiplexes over that connection arrives with the same `RemoteID`. |
+| `websocket` | `ws-peer:<token>` — a per-process random token the dialing Backend offers in `Sec-WebSocket-Protocol` on every outbound socket, so each per-stream WebSocket from the same dialer correlates server-side. |
+| `unix` | `unix:uid=<uid>:pid=<pid>` from peer credentials (`LOCAL_PEERCRED`/`LOCAL_PEERPID` on darwin, `SO_PEERCRED` on linux). Server reads peer creds lazily — a dialer that closes a stream before the handler runs may have its peer-creds read fail and the stream silently rejected. |
+
+In every case `IdentityOf` returns the same `Identity` shape — the
+backend choice doesn't leak into the auth surface. Streams that
+arrive without a prior successful handshake on the same correlation
+key are silently dropped by the wrapper; the application handler
+never sees them.
+
+The cross-backend contract is pinned by `TestIdentityOf_AcrossBackends`
+in `auth/identity_backends_test.go` — it runs an owner + reader
+dial through each backend and asserts the captured `Identity`
+matches the credential. Add the new backend to that test before
+shipping it.

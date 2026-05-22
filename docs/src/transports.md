@@ -101,6 +101,8 @@ Each `accept(2)` on the server side pulls (uid, pid) via
 `"unix:uid=1000:pid=12345"`. The same caller process produces the
 same RemoteID across both streams, so `auth.Wrap` correlates them
 the same way it does with a libp2p peer id or an HTTP `RemoteAddr`.
+See [auth.md](auth.md#identity-semantics-across-backends) for the
+full per-backend `IdentityOf` table.
 
 Limitations:
 
