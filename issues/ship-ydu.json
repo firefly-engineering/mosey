@@ -1,0 +1,14 @@
+{
+  "assignee": "",
+  "blocked_by": [],
+  "blocks": [],
+  "created": "2026-05-22T06:54:02Z",
+  "description": "Downstream consumers that pattern-match agent output (the agent-observer use case) need to work against the *rendered* screen, not the raw PTY byte stream — ANSI escapes, cursor moves, and redraws make regexes brittle and false-positive-prone.\n\nDespite the package name, internal/vterm/ is session/fan-out management, not a terminal emulator. Each consumer currently has to wire its own vt100 parser (vt10x, tcell, etc.) on top of attach.Run.\n\nProposed shape (small, optional):\n\n  package screen\n\n  type Screen interface {\n      // Feed raw PTY bytes (as delivered by attach output).\n      Write(p []byte) (int, error)\n\n      // Snapshot the current rendered grid.\n      Cells() [][]Cell      // or whatever the chosen lib exposes naturally\n      Text() string         // plain-text flattening, newline per row\n      Cursor() (col, row int)\n      Size() (cols, rows int)\n  }\n\n  func New(cols, rows int) Screen   // wraps a vt100 emulator (likely vt10x)\n\nConsumer flow:\n\n  scr := screen.New(80, 24)\n  // in the attach output goroutine:\n  scr.Write(buf[:n])\n  // periodically / on signal:\n  if strings.Contains(scr.Text(), \"Waiting for input\") { ... }\n\nScope:\n- Wrap one existing emulator (vt10x is the obvious pick); do not roll our own.\n- No resize coordination — caller passes the geometry they care about.\n- No event hooks / pattern engine — that's the consumer's concern; this package only provides the rendered view.\n\nOut of scope:\n- Headless screenshotting / image rendering.\n- Diff streams between snapshots (consumers can diff Text() themselves).\n\nDepends on ship-y2s — pkg/ only exists as a public layout once that ticket decides whether to move or re-export. File this as a follow-up once the public API shape lands.\n\nLower priority than the API exposure work; defer until a second observer-style consumer materializes if the first one ships fine with its own vt10x glue.",
+  "id": "ship-ydu",
+  "labels": [],
+  "priority": 3,
+  "status": "open",
+  "title": "pkg/screen: rendered-screen view of a mosey PTY stream",
+  "type": "task",
+  "updated_at": "2026-05-22T06:54:02Z"
+}
