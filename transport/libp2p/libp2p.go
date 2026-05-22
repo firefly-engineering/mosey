@@ -36,29 +36,55 @@ const Scheme = "libp2p"
 
 // Options configures a [Backend].
 type Options struct {
+	// Host, when non-nil, is used as-is and the backend will not
+	// construct or close one of its own. Use this when the caller
+	// already runs a libp2p host (so identity, listeners, and any
+	// extra protocols stay on a single peer id) — for example a
+	// daemon that wants /mosey/pty/ to share a connection with its
+	// own RPC. Setting Host together with any of Identity,
+	// ListenAddrs, or Bootstrap is a configuration error: those
+	// fields describe construction of a host the backend doesn't
+	// build.
+	Host host.Host
+
 	// Identity is the libp2p private key. Zero means "generate a
 	// fresh Ed25519 key" — fine for ephemeral processes; persist
 	// when you need a stable peer id across restarts (the cert
-	// authenticator's identity will live in this key).
+	// authenticator's identity will live in this key). Ignored when
+	// Host is set.
 	Identity crypto.PrivKey
 
 	// ListenAddrs are the multiaddrs to bind. Zero means default
 	// (TCP + QUIC on all interfaces, random ports). Pass an empty
 	// (non-nil) slice for "no listener" — useful for client-only
-	// configurations.
+	// configurations. Ignored when Host is set.
 	ListenAddrs []multiaddr.Multiaddr
 
 	// Bootstrap is the set of public peers to use for DHT
 	// bootstrap, hole-punching, and AutoRelay discovery. Zero
 	// means "use [DefaultBootstrap] (IPFS public)". Empty
-	// (non-nil) slice means "no bootstrap".
+	// (non-nil) slice means "no bootstrap". Ignored when Host is
+	// set.
 	Bootstrap []peer.AddrInfo
 }
 
 // New constructs a libp2p [transport.Transport] backend. The
 // returned backend immediately starts listening; call Close to
 // release listener + outstanding streams.
+//
+// When opts.Host is non-nil the backend uses the supplied host
+// directly; its construction options (Identity, ListenAddrs,
+// Bootstrap) must be zero and the caller retains ownership —
+// Close becomes a no-op on the host so the caller can keep using
+// it for other protocols.
 func New(ctx context.Context, opts Options) (*Backend, error) {
+	if opts.Host != nil {
+		if opts.Identity != nil || opts.ListenAddrs != nil || opts.Bootstrap != nil {
+			return nil, errors.New("libp2p: Options.Host is exclusive with Identity/ListenAddrs/Bootstrap (configure those on the caller-supplied host instead)")
+		}
+		return &Backend{host: opts.Host, ownsHost: false}, nil
+	}
+
 	identity := opts.Identity
 	if identity == nil {
 		priv, _, err := crypto.GenerateEd25519Key(rand.Reader)
@@ -126,12 +152,16 @@ func New(ctx context.Context, opts Options) (*Backend, error) {
 		}
 	}
 
-	return &Backend{host: h}, nil
+	return &Backend{host: h, ownsHost: true}, nil
 }
 
 // Backend implements [transport.Transport] over libp2p.
 type Backend struct {
 	host host.Host
+	// ownsHost is true when New constructed the host; false when
+	// the caller supplied one via Options.Host. Gates whether
+	// Close shuts the host down.
+	ownsHost bool
 }
 
 // Host returns the underlying libp2p host. Escape hatch for
@@ -191,8 +221,15 @@ func (b *Backend) Dial(ctx context.Context, endpoint, proto string) (transport.S
 	return &streamAdapter{Stream: s}, nil
 }
 
-// Close implements [transport.Transport].
-func (b *Backend) Close() error { return b.host.Close() }
+// Close implements [transport.Transport]. When the host was
+// caller-supplied (Options.Host), Close leaves it alone so the
+// caller can keep using it for other protocols.
+func (b *Backend) Close() error {
+	if !b.ownsHost {
+		return nil
+	}
+	return b.host.Close()
+}
 
 // streamAdapter wraps a libp2p [network.Stream] to satisfy
 // [transport.Stream]. CloseWrite is native libp2p; RemoteID
