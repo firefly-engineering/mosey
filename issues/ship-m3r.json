@@ -3,12 +3,13 @@
   "blocked_by": [],
   "blocks": [],
   "created": "2026-05-22T06:43:03Z",
+  "defer_until": "2026-08-22",
   "description": "Mosey's `Transport.Dial` takes a full endpoint URI (`libp2p:///p2p/\u003cid\u003e/...`, `unix:///var/run/...`, `https://...`). Consumers that think in stable peer IDs and resolve to addresses out-of-band (shepherd's registry stores workspace members by peer ID; the addresses change as peers roam) need to do the resolution at every call site.\n\nA small optional shape would let mosey lift that:\n\n```go\ntype AddressBook interface {\n    Resolve(peer string) (endpoint string, ok bool)\n}\n\nfunc Multi(backends ...Transport) (Transport, error)\nfunc MultiWithAddressBook(ab AddressBook, backends ...Transport) (Transport, error)\n```\n\nWhen the dial target isn't a recognized URI, the multi backend asks the address book and re-dials with the resolved endpoint. Backends that already have native peer-store concepts (libp2p) can short-circuit by interpreting the bare peer-ID form themselves.\n\nNot a blocker — shepherd can do peer→endpoint resolution in its registry — but worth considering because (a) other consumers will likely want the same, and (b) it would let libp2p's PeerStore stay the source of truth for connection cache instead of being shadowed by an external map.\n\nLower priority than `ship-y2s` (public Go API) and `ship-0qs` (BYO host); skip outright if shepherd-side resolution proves comfortable in practice.",
   "id": "ship-m3r",
   "labels": [],
   "priority": 3,
-  "status": "open",
+  "status": "deferred",
   "title": "Optional address-book hook for peer-ID-keyed dial",
   "type": "task",
-  "updated_at": "2026-05-22T06:43:03Z"
+  "updated_at": "2026-05-22T07:36:12Z"
 }
