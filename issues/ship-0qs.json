@@ -4,13 +4,14 @@
     "ship-y2s"
   ],
   "blocks": [],
+  "closed_at": "2026-05-22T07:11:02Z",
   "created": "2026-05-22T06:42:51Z",
   "description": "Today `transport/libp2p.New` constructs and owns its `host.Host`. Callers that already run a libp2p host — or that want to run additional libp2p protocols (gossipsub, application-specific RPCs) on the *same* identity — have no way to share it.\n\nShepherd is the motivating consumer: a shepherd-d daemon wants exactly one libp2p identity per host. If shepherd keeps its own host and mosey opens a second one alongside, the daemon presents two peer IDs, opens two sets of listening ports, and can't share an established connection between, say, a forwarder RPC and a `/mosey/pty/` attach.\n\nTwo shapes that solve it:\n\n1. **`Config.Host host.Host`** — if non-nil, the backend uses the supplied host and skips constructing one. `Close` does not shut the host down (caller owns it).\n2. **`(*Backend).Host() host.Host` accessor** — backend still owns construction, but external code can register additional protocols / open pubsub on the same host.\n\n(1) is more flexible and lets shepherd own bring-up + identity / addr config. (2) is less invasive but pushes ownership inversion onto the consumer.\n\nWorkaround path if this never lands: shepherd keeps mosey strictly behind `transport.Transport` and runs its own forwarder protocol as a mosey-registered `Handle`. That covers the forwarder case but not gossipsub or any other libp2p-direct feature, so this remains a real-but-bounded ceiling on what consumers can do.\n\nDepends on `ship-y2s` (public Go API surface) — without that, no external caller can hit this code path.",
   "id": "ship-0qs",
   "labels": [],
   "priority": 2,
-  "status": "in_progress",
+  "status": "closed",
   "title": "BYO libp2p host (or expose the host) on the libp2p backend",
   "type": "task",
-  "updated_at": "2026-05-22T07:08:48Z"
+  "updated_at": "2026-05-22T07:11:02Z"
 }
