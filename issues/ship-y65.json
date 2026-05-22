@@ -1,0 +1,14 @@
+{
+  "assignee": "",
+  "blocked_by": [],
+  "blocks": [],
+  "created": "2026-05-22T15:35:53Z",
+  "description": "Two shepherd-d tests that each call `libp2p.New` via [transport/libp2p].New trip Go's race detector when run in the same test binary with `-race`, even when they don't share state. The race report points into go-libp2p's `fx`-driven host construction.\n\nReproducer (verified against mosey `v0.0.0-20260522075807-017a918adfd5`): run shepherd's `./cmd/shepherd-d/...` with `-race -count=1` after [adding a third test](https://github.com/firefly-engineering/shepherd) that calls `startLibp2p` while the other two were already parallel. Two tests pass, three race.\n\nTrace bottom (truncated to the mosey + upstream frames):\n\n```\ngithub.com/firefly-engineering/mosey/transport/libp2p.New()\n    .../mosey/transport/libp2p/libp2p.go:135 +0x630\ngithub.com/libp2p/go-libp2p.New()\ngithub.com/libp2p/go-libp2p.NewWithoutDefaults()\ngithub.com/libp2p/go-libp2p/config.(*Config).NewNode()\ngo.uber.org/fx.New()\ngo.uber.org/fx.(*module).invokeAll()\n```\n\nThe downstream symptom is that shepherd CI either pins this to a single-threaded test or skips the race variant via a build tag — neither great, but workable while this is open.\n\nPossible angles to investigate:\n1. Confirm whether the race is inside go-libp2p's package-level init (`init()` registering with fx) or in mosey's own setup path. If upstream, file a go-libp2p issue and link from here.\n2. If mosey's `libp2p.New` is reading any package-global on a non-init path, gate that read with sync.Once or a mutex.\n3. Document the constraint in [`transport/libp2p/doc.go`](transport/libp2p/doc.go): \"concurrent New is race-unsafe under -race; use `sync.Mutex` across calls in test code that does this.\"\n\nLow priority because it's a -race-only diagnostic, but worth resolving before the next consumer trips on it.",
+  "id": "ship-y65",
+  "labels": [],
+  "priority": 3,
+  "status": "open",
+  "title": "Race detector flags concurrent libp2p.New() across same-binary tests",
+  "type": "bug",
+  "updated_at": "2026-05-22T15:35:53Z"
+}
