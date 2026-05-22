@@ -50,13 +50,11 @@ func TestVterm_AttachRoundTrip(t *testing.T) {
 	// Run `cat` under the vterm. Echoes its input back as output,
 	// so anything attach sends should reappear on attach's stdout.
 	vtermDone := make(chan error, 1)
+	vtermReady := make(chan struct{})
 	go func() {
-		vtermDone <- vterm.Run(ctx, vterm.Options{Transport: vtermAuthed}, []string{"cat"})
+		vtermDone <- vterm.Run(ctx, vterm.Options{Transport: vtermAuthed, Ready: vtermReady}, []string{"cat"})
 	}()
-
-	// Wait for vterm.Run to register the stream handlers + spawn
-	// the child.
-	time.Sleep(100 * time.Millisecond)
+	<-vtermReady
 
 	// Host B: the attach client.
 	attachBackend, err := libp2pbackend.New(ctx, libp2pbackend.Options{

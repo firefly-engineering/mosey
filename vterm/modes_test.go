@@ -77,8 +77,17 @@ func newVtermSession(t *testing.T, ctx context.Context, mode vterm.Mode, argv []
 	authed.Serve()
 
 	done = make(chan error, 1)
-	go func() { done <- vterm.Run(ctx, vterm.Options{Transport: authed, Mode: mode}, argv) }()
-	time.Sleep(100 * time.Millisecond)
+	ready := make(chan struct{})
+	go func() {
+		done <- vterm.Run(ctx, vterm.Options{Transport: authed, Mode: mode, Ready: ready}, argv)
+	}()
+	select {
+	case <-ready:
+	case err := <-done:
+		t.Fatalf("vterm.Run exited before becoming ready: %v", err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("vterm.Run did not signal Ready within 5s")
+	}
 
 	endpoints := backend.Endpoints()
 	if len(endpoints) == 0 {

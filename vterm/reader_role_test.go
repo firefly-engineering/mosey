@@ -49,10 +49,11 @@ func TestVterm_ReaderSecretIsObserverOnly(t *testing.T) {
 	vtermAuthed.Serve()
 
 	vtermDone := make(chan error, 1)
+	vtermReady := make(chan struct{})
 	go func() {
-		vtermDone <- vterm.Run(ctx, vterm.Options{Transport: vtermAuthed}, []string{"cat"})
+		vtermDone <- vterm.Run(ctx, vterm.Options{Transport: vtermAuthed, Ready: vtermReady}, []string{"cat"})
 	}()
-	time.Sleep(100 * time.Millisecond)
+	<-vtermReady
 
 	endpoints := vtermBackend.Endpoints()
 	if len(endpoints) == 0 {

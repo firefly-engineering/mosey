@@ -44,11 +44,11 @@ func TestVterm_ResizeAppliesViaControlStream(t *testing.T) {
 
 	script := "stty size; trap 'stty size' WINCH; while true; do sleep 0.1; done"
 	vtermDone := make(chan error, 1)
+	vtermReady := make(chan struct{})
 	go func() {
-		vtermDone <- vterm.Run(ctx, vterm.Options{Transport: vtermAuthed}, []string{"bash", "-c", script})
+		vtermDone <- vterm.Run(ctx, vterm.Options{Transport: vtermAuthed, Ready: vtermReady}, []string{"bash", "-c", script})
 	}()
-
-	time.Sleep(300 * time.Millisecond)
+	<-vtermReady
 
 	attachBackend, err := libp2pbackend.New(ctx, libp2pbackend.Options{
 		Bootstrap: []peer.AddrInfo{},

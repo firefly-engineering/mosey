@@ -43,10 +43,11 @@ func TestVterm_Unix_AttachRoundTrip(t *testing.T) {
 	vtermAuthed.Serve()
 
 	vtermDone := make(chan error, 1)
+	vtermReady := make(chan struct{})
 	go func() {
-		vtermDone <- vterm.Run(ctx, vterm.Options{Transport: vtermAuthed}, []string{"cat"})
+		vtermDone <- vterm.Run(ctx, vterm.Options{Transport: vtermAuthed, Ready: vtermReady}, []string{"cat"})
 	}()
-	time.Sleep(100 * time.Millisecond)
+	<-vtermReady
 
 	attachBackend, err := unixbackend.New(ctx, unixbackend.Options{}) // client-only
 	if err != nil {

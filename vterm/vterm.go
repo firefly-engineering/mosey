@@ -69,6 +69,14 @@ type Options struct {
 	// avoids race conditions and matches "I roam between
 	// machines" usage.
 	Mode Mode
+
+	// Ready, when non-nil, is closed once Run has registered every
+	// stream handler on Transport. Callers that need to dial the
+	// vterm from the same process can block on this channel instead
+	// of guessing a sleep — handler registration happens after
+	// pty.StartWithSize, whose fork+exec latency under CPU pressure
+	// is exactly the race that motivated this signal.
+	Ready chan<- struct{}
 }
 
 // Run spawns argv under a PTY, registers the protocol handlers on
@@ -114,6 +122,10 @@ func Run(ctx context.Context, opts Options, argv []string) error {
 	defer opts.Transport.Unhandle(api.ProtoPTY)
 	defer opts.Transport.Unhandle(api.ProtoPTYResume)
 	defer opts.Transport.Unhandle(api.ProtoControl)
+
+	if opts.Ready != nil {
+		close(opts.Ready)
+	}
 
 	logger.Info("vterm running",
 		"pid", cmd.Process.Pid,
