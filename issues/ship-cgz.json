@@ -1,0 +1,14 @@
+{
+  "assignee": "",
+  "blocked_by": [],
+  "blocks": [],
+  "created": "2026-05-22T07:52:48Z",
+  "description": "TestPTYResume_NonZeroSeqSkipsAlreadySeen and similar vterm integration tests flake intermittently under full-suite -count=2 with: 'libp2p: open /mosey/pty/1.0.0: failed to negotiate protocol: protocols not supported: [/mosey/pty/1.0.0]'.\n\nRoot cause: vterm.Run does pty.StartWithSize *before* registering the /mosey/pty handler. Tests start vterm.Run in a goroutine and wait time.Sleep(100ms) before dialing. Under CPU pressure from other test packages, the fork+exec for pty.StartWithSize can take longer than 100ms, so the dial races and the server reports no handler.\n\nConfirmed with a deliberate 250ms sleep injected before pty.StartWithSize — flake reproduces 100% in isolation, exactly mirroring the natural-load symptom.\n\nFix: add Options.Ready (chan\u003c- struct{}) to vterm.Run. When non-nil, Run closes it after the three Handle calls complete. Tests pass a ready channel and block on it instead of guessing a sleep. The 6 test files that drive vterm.Run in a goroutine are updated. Production callers (cmd/mosey/launch.go) ignore the field.\n\nVerified: 12 full-suite -count=2 stress runs after the fix, 0 failures (previously ~1-in-5).",
+  "id": "ship-cgz",
+  "labels": [],
+  "priority": 2,
+  "status": "open",
+  "title": "Fix vterm.Run startup race exposed by -count=2 stress runs",
+  "type": "task",
+  "updated_at": "2026-05-22T07:52:48Z"
+}
