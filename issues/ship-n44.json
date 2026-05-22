@@ -1,0 +1,14 @@
+{
+  "assignee": "",
+  "blocked_by": [],
+  "blocks": [],
+  "created": "2026-05-22T16:10:36Z",
+  "description": "Add a --detach flag to mosey launch so the user can background the launcher after it has printed its addresses, without relying on `setsid ... \u0026` plumbing in the shell.\n\nShape (decided in design pass):\n\n- --detach: standard daemon pattern. Parent re-execs the same binary with MOSEY_DETACHED_FD=3 and SysProcAttr.Setsid=true, child's stdio redirected to /dev/null (or --log-file). Child runs normal startup, writes its address lines to fd 3, closes fd 3, continues. Parent reads from the pipe, mirrors to stderr, exits 0.\n- --pidfile=FILE: detached child writes its pid; removes on exit.\n- --address-file=FILE: detached child writes its endpoints, one per line; removes on exit.\n- --log-file=FILE: where the detached child's logs go (default /dev/null).\n\nUX:\n\n  $ mosey launch --secret=x --detach -- bash\n  mosey launch: listening: /ip4/.../p2p/12D3KooW...\n  $    # prompt returns; child runs detached\n\nImplementation notes:\n- Re-exec via os/exec.Command(os.Args[0], os.Args[1:]...) plus ExtraFiles for the pipe.\n- syscall.SysProcAttr{Setsid: true} on darwin+linux. No Windows support needed (mosey is unix-only today).\n- Skip the double-fork — Go's runtime doesn't fork() safely, and mosey doesn't open any controlling-tty files in the parent process itself (the child PTY is for the spawned program).\n- Bail loudly if --detach is set without an argv (refuse to detach a no-op).\n- Cleanup of pidfile/address-file on child exit.",
+  "id": "ship-n44",
+  "labels": [],
+  "priority": 2,
+  "status": "open",
+  "title": "mosey launch --detach: daemonize after printing addresses",
+  "type": "task",
+  "updated_at": "2026-05-22T16:10:36Z"
+}
