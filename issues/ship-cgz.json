@@ -1,5 +1,5 @@
 {
-  "assignee": "",
+  "assignee": "unknown",
   "blocked_by": [],
   "blocks": [],
   "created": "2026-05-22T07:52:48Z",
@@ -7,8 +7,8 @@
   "id": "ship-cgz",
   "labels": [],
   "priority": 2,
-  "status": "open",
+  "status": "in_progress",
   "title": "Fix vterm.Run startup race exposed by -count=2 stress runs",
   "type": "task",
-  "updated_at": "2026-05-22T07:52:48Z"
+  "updated_at": "2026-05-22T07:52:53Z"
 }
