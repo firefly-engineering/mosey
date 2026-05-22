@@ -45,6 +45,19 @@ The shared secret is required on both sides. For multi-tenant
 workspaces with revocation, mint per-agent certs from a master
 keypair — see [docs/src/auth.md](docs/src/auth.md).
 
+To background the launcher after it has printed its addresses, use
+`--detach`. The parent prints the listening lines to your shell and
+exits 0; the child keeps running across shell exit. Optional
+companions:
+
+```sh
+$ mosey launch --secret=hunter2 --detach \
+      --pidfile=/tmp/mosey.pid --address-file=/tmp/mosey.addr \
+      --log-file=/tmp/mosey.log -- bash
+mosey launch: listening: /ip4/192.168.1.10/tcp/4001/p2p/12D3KooW...
+$ kill $(cat /tmp/mosey.pid)   # later, from any shell
+```
+
 ## Subcommands
 
 ```text

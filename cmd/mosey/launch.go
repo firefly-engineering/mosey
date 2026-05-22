@@ -4,16 +4,19 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"crypto/tls"
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/url"
 	"os"
 	"os/exec"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 
@@ -30,6 +33,18 @@ import (
 	"github.com/firefly-engineering/mosey/vterm"
 )
 
+// detachEnvFD is the env var the parent sets on the re-exec'd child
+// to (a) signal "you're the detached child, take the daemon path"
+// and (b) tell the child which inherited fd is the sync pipe back
+// to the parent. fd 3 is the conventional first ExtraFile slot.
+const detachEnvFD = "MOSEY_DETACHED_FD"
+
+// detachReadySentinel marks end-of-handshake on the parent/child
+// sync pipe — the child writes its endpoint lines, then this line,
+// then closes the pipe. The parent prints everything before the
+// sentinel, drops the sentinel itself, and exits 0.
+const detachReadySentinel = "__mosey_ready__"
+
 func runLaunch(args []string, stderr *os.File) int {
 	fs := flag.NewFlagSet("mosey launch", flag.ContinueOnError)
 	fs.SetOutput(stderr)
@@ -44,6 +59,10 @@ func runLaunch(args []string, stderr *os.File) int {
 	fs.Var(&listens, "listen", "backend listener; repeatable. Forms: libp2p:// (default — random TCP+QUIC ports) | http://host:port (h2c) | https://host:port (TLS — requires --http-cert/--http-key) | unix:///path/to/sock (same-host) | ws://host:port (browser cleartext) | wss://host:port (browser TLS — requires --http-cert/--http-key).")
 	noBootstrap := fs.Bool("no-p2p-bootstrap", false, "skip the IPFS public bootstrap set; useful for LAN-only / offline testing")
 	logLevel := fs.String("log-level", "warn", "slog level: debug|info|warn|error")
+	detach := fs.Bool("detach", false, "after printing listening addresses, re-exec self in a detached child and exit 0 from the parent. Stays alive across shell exit.")
+	pidFile := fs.String("pidfile", "", "write the (detached) child's PID to FILE on startup; remove on exit. Only meaningful with --detach.")
+	addressFile := fs.String("address-file", "", "write the (detached) child's endpoint URIs to FILE, one per line, on startup; remove on exit. Only meaningful with --detach.")
+	logFile := fs.String("log-file", "", "redirect the detached child's stdout+stderr to FILE (default /dev/null). Only meaningful with --detach.")
 
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -67,6 +86,19 @@ func runLaunch(args []string, stderr *os.File) int {
 	}
 	if len(listens) == 0 {
 		listens = stringSliceFlag{"libp2p://"}
+	}
+	if !*detach {
+		if *pidFile != "" || *addressFile != "" || *logFile != "" {
+			fmt.Fprintln(stderr, "mosey launch: --pidfile/--address-file/--log-file are only meaningful with --detach")
+			return 2
+		}
+	}
+
+	// Parent half of the detach dance: re-exec self with the sync
+	// pipe wired up, forward addresses to our stderr until the child
+	// signals ready, then exit. The child takes the rest of runLaunch.
+	if *detach && os.Getenv(detachEnvFD) == "" {
+		return runLaunchDetachParent(stderr, *logFile)
 	}
 
 	logger := newLogger(stderr, *logLevel)
@@ -112,8 +144,51 @@ func runLaunch(args []string, stderr *os.File) int {
 		go watchRevocationFile(ctx, certCfg.RevocationPath, ca, logger)
 	}
 
-	for _, ep := range authed.Endpoints() {
+	endpoints := authed.Endpoints()
+	for _, ep := range endpoints {
 		fmt.Fprintf(stderr, "mosey launch: listening: %s\n", ep)
+	}
+
+	// Detached child path: write the same endpoint lines (plus the
+	// ready sentinel) to the inherited pipe, then close it. The
+	// parent is io.Copy-ing the pipe to its own stderr until it sees
+	// the sentinel; closing the pipe makes that copy return cleanly.
+	// We also persist pidfile/address-file at this point so a kill
+	// after the parent has exited still has somewhere to look up the
+	// pid + endpoints.
+	if envFD := os.Getenv(detachEnvFD); envFD != "" {
+		fd, parseErr := strconv.Atoi(envFD)
+		if parseErr != nil {
+			fmt.Fprintln(stderr, "mosey launch: bad", detachEnvFD, "value:", envFD)
+			return 1
+		}
+		readyPipe := os.NewFile(uintptr(fd), "detach-ready")
+		for _, ep := range endpoints {
+			fmt.Fprintf(readyPipe, "mosey launch: listening: %s\n", ep)
+		}
+		fmt.Fprintln(readyPipe, detachReadySentinel)
+		_ = readyPipe.Close()
+		os.Unsetenv(detachEnvFD)
+
+		if *pidFile != "" {
+			if err := os.WriteFile(*pidFile, []byte(strconv.Itoa(os.Getpid())+"\n"), 0o644); err != nil {
+				fmt.Fprintln(stderr, "mosey launch: write pidfile:", err)
+				return 1
+			}
+			defer func() { _ = os.Remove(*pidFile) }()
+		}
+		if *addressFile != "" {
+			var b strings.Builder
+			for _, ep := range endpoints {
+				b.WriteString(ep)
+				b.WriteByte('\n')
+			}
+			if err := os.WriteFile(*addressFile, []byte(b.String()), 0o644); err != nil {
+				fmt.Fprintln(stderr, "mosey launch: write address-file:", err)
+				return 1
+			}
+			defer func() { _ = os.Remove(*addressFile) }()
+		}
 	}
 
 	parsedMode, err := vterm.ParseMode(*mode)
@@ -130,6 +205,83 @@ func runLaunch(args []string, stderr *os.File) int {
 		fmt.Fprintln(stderr, "mosey launch:", err)
 		return 1
 	}
+	return 0
+}
+
+// runLaunchDetachParent is the parent half of --detach: re-exec the
+// same binary with its existing argv, hand the child one end of a
+// pipe as fd 3, mirror the child's address lines to our own stderr
+// until the child writes the ready sentinel, then exit 0. The child
+// continues running with its stdio pointed at logFile (or
+// /dev/null), Setsid set so SIGHUP from the parent shell can't reach
+// it.
+func runLaunchDetachParent(stderr *os.File, logFile string) int {
+	exe, err := os.Executable()
+	if err != nil {
+		fmt.Fprintln(stderr, "mosey launch: resolve self:", err)
+		return 1
+	}
+
+	pipeR, pipeW, err := os.Pipe()
+	if err != nil {
+		fmt.Fprintln(stderr, "mosey launch: pipe:", err)
+		return 1
+	}
+	defer func() { _ = pipeR.Close() }()
+
+	var childOut *os.File
+	if logFile == "" {
+		childOut, err = os.OpenFile(os.DevNull, os.O_WRONLY, 0)
+	} else {
+		childOut, err = os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	}
+	if err != nil {
+		fmt.Fprintln(stderr, "mosey launch: open child log:", err)
+		_ = pipeW.Close()
+		return 1
+	}
+	defer func() { _ = childOut.Close() }()
+
+	cmd := exec.Command(exe, os.Args[1:]...)
+	cmd.Env = append(os.Environ(), detachEnvFD+"=3")
+	cmd.Stdin = nil
+	cmd.Stdout = childOut
+	cmd.Stderr = childOut
+	cmd.ExtraFiles = []*os.File{pipeW}
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	if err := cmd.Start(); err != nil {
+		_ = pipeW.Close()
+		fmt.Fprintln(stderr, "mosey launch: spawn child:", err)
+		return 1
+	}
+	// Release the parent's copy of the write end so the read side
+	// EOFs cleanly when the child closes its own copy.
+	_ = pipeW.Close()
+	// Disown the child PID; we don't want Wait()ing on it.
+	_ = cmd.Process.Release()
+
+	scanner := bufio.NewScanner(pipeR)
+	sawReady := false
+	for scanner.Scan() {
+		line := scanner.Text()
+		if line == detachReadySentinel {
+			sawReady = true
+			break
+		}
+		fmt.Fprintln(stderr, line)
+	}
+	if err := scanner.Err(); err != nil {
+		fmt.Fprintln(stderr, "mosey launch: read child sync pipe:", err)
+		return 1
+	}
+	if !sawReady {
+		fmt.Fprintln(stderr, "mosey launch: child exited before signalling ready (check --log-file for cause)")
+		return 1
+	}
+	// Drain any trailing output the child wrote between the sentinel
+	// and closing the pipe — keeps the parent's stderr in sync with
+	// what the child intended to surface.
+	_, _ = io.Copy(stderr, pipeR)
 	return 0
 }
 
