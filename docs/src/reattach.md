@@ -7,7 +7,7 @@ within the bounds of the server's output ring buffer.
 
 ## The ring
 
-`internal/streambuf.OutputRing` is a fixed-size byte ring with a
+`streambuf.OutputRing` is a fixed-size byte ring with a
 monotonic sequence counter. Every byte the child process emits
 gets tagged with its sequence number on the way through.
 

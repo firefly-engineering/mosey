@@ -3,8 +3,8 @@
 mosey is an extraction from
 [shepherd](https://github.com/firefly-engineering/shepherd), the
 Firefly Engineering control plane for AI coding agents. The pieces
-in `internal/transport/`, `internal/auth/`, `internal/vterm/`, and
-`internal/streambuf/` all originated as shepherd internals.
+in `transport/`, `auth/`, `vterm/`, and
+`streambuf/` all originated as shepherd internals.
 
 ## Why split it out?
 

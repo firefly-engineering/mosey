@@ -102,13 +102,13 @@ lint:
 # Code generation
 # ──────────────────────────────────────────────────────────────────────
 
-# Regenerate proto-generated Go from internal/api/*.proto.
+# Regenerate proto-generated Go from api/*.proto.
 proto:
     protoc \
         --go_out=. --go_opt=module=github.com/firefly-engineering/mosey \
-        internal/api/auth.proto \
-        internal/api/cert.proto \
-        internal/api/control.proto
+        api/auth.proto \
+        api/cert.proto \
+        api/control.proto
 
 # Verify the committed *.pb.go matches what protoc would regenerate.
 # Catches drift between .proto sources and checked-in Go in CI.
@@ -117,13 +117,13 @@ proto-check:
     set -euo pipefail
     tmp=$(mktemp -d)
     trap 'rm -rf "$tmp"' EXIT
-    mkdir -p "$tmp/internal/api"
-    cp internal/api/*.proto "$tmp/internal/api/"
+    mkdir -p "$tmp/api"
+    cp api/*.proto "$tmp/api/"
     (cd "$tmp" && protoc \
         --go_out=. --go_opt=module=github.com/firefly-engineering/mosey \
-        internal/api/auth.proto internal/api/cert.proto internal/api/control.proto)
+        api/auth.proto api/cert.proto api/control.proto)
     for f in auth.pb.go cert.pb.go control.pb.go; do
-        diff -u "$tmp/internal/api/$f" "internal/api/$f"
+        diff -u "$tmp/api/$f" "api/$f"
     done
 
 # ──────────────────────────────────────────────────────────────────────

@@ -17,20 +17,26 @@ touching code.
 ```
 cmd/
   mosey/                 the only released binary (launch | attach | control | cert)
-  internal/certflags/    shared --cert/--key/--master-pub flag bundle
-internal/
-  api/                   wire protos (auth, control, cert) + protocol IDs
-  attach/                client side: dial /mosey/pty/, reconnect-with-replay
-  auth/                  Authenticator interface, PSK + cert impls, Wrap()
-  cert/                  Sign/Verify, revocation file, BIP-39 master
-  streambuf/             OutputRing — sequence-tagged ring buffer for replay
-  transport/             Transport / Stream interfaces, Multi aggregator
-    libp2p/              production cross-host backend (TCP + QUIC + Noise + DCUtR)
-    http2/               h2c + HTTPS backend, useful for browser / proxy environments
-  vterm/                 session: PTY fan-out, per-client geometry, mode policy
+  internal/certflags/    shared --cert/--key/--master-pub flag bundle (cmd-only)
+api/                     wire protos (auth, control, cert) + protocol IDs
+attach/                  client side: dial /mosey/pty/, reconnect-with-replay
+auth/                    Authenticator interface, PSK + cert impls, Wrap()
+cert/                    Sign/Verify, revocation file, BIP-39 master
+streambuf/               OutputRing — sequence-tagged ring buffer for replay
+transport/               Transport / Stream interfaces, Multi aggregator
+  libp2p/                production cross-host backend (TCP + QUIC + Noise + DCUtR)
+  http2/                 h2c + HTTPS backend, useful for browser / proxy environments
+  unix/                  same-host backend over unix domain sockets
+  websocket/             ws / wss backend for browsers and HTTP-only environments
+vterm/                   session: PTY fan-out, per-client geometry, mode policy
 docs/
   src/                   mdbook source (SUMMARY.md is the index)
 ```
+
+All non-`cmd/` packages live at module root so external Go modules
+(shepherd, third-party consumers) can import them. The public Go
+surface is now a commitment; rename a package only with a deliberate
+version bump.
 
 ## Build, test, run
 
@@ -43,7 +49,7 @@ go run ./cmd/mosey help              # smoke-test the dispatcher
 The Nix shell (`nix develop`, or `direnv allow` then auto-load via
 `.envrc`) pins the Go toolchain and adds protoc + nixfmt-tree.
 Without Nix, install Go 1.26.2 yourself and `protoc` + the Go
-plugin if you need to regenerate `internal/api/*.pb.go`.
+plugin if you need to regenerate `api/*.pb.go`.
 
 ## Conventions
 
@@ -53,10 +59,10 @@ plugin if you need to regenerate `internal/api/*.pb.go`.
 - **No backwards-compat shims** until something's tagged. Pre-v0.1
   we change wire IDs / flag shapes when the design wants it.
 - **Tests touch real backends.** Never mock the libp2p / http2
-  layer — the integration tests in `internal/transport/http2/` and
-  `internal/vterm/` use ephemeral local listeners. If a flake
+  layer — the integration tests in `transport/http2/` and
+  `vterm/` use ephemeral local listeners. If a flake
   appears, root-cause it (the auth handshake had to grow a sync
-  byte for exactly this reason — see `internal/auth/wrap.go`).
+  byte for exactly this reason — see `auth/wrap.go`).
 - **Wire IDs and HKDF labels are crypto-load-bearing.** Once a
   workspace master is minted, `/mosey/auth/1.0.0`, `/mosey/pty/1.0.0`,
   `mosey-cert-v1`, and `mosey-cert-master` are baked into key

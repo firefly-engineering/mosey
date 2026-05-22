@@ -16,7 +16,7 @@ The protocol IDs — and the HKDF context labels (`mosey-cert-v1`,
 load-bearing for the wire format and for every workspace master
 ever generated. Bumping the trailing version number is the
 sanctioned way to change them; the constants live in
-`internal/api/protocols.go` and `internal/cert/master.go`.
+`api/protocols.go` and `cert/master.go`.
 
 ## Protocol lifecycle
 
@@ -39,9 +39,9 @@ The `ackOK` byte is the synchronization gate. Without it the client
 could race ahead and open `/mosey/pty/` before the server has
 finished writing the [`Identity`] into its session table; the
 handler would then run with an empty capability set. See
-`internal/auth/wrap.go` for the gory details.
+`auth/wrap.go` for the gory details.
 
-[`Identity`]: ../../internal/auth/identity.go
+[`Identity`]: ../../auth/identity.go
 
 ## The auth wrap
 
@@ -64,7 +64,7 @@ PSK or a workspace cert — see [auth](auth.md).
 The vterm session owns one `os/exec` child and one PTY master. The
 child's output is **never streamed directly** to attached clients —
 it's funneled through an `OutputRing` (in
-`internal/streambuf/`) and from there fanned out to each attached
+`streambuf/`) and from there fanned out to each attached
 client's outbound buffer.
 
 That indirection buys two properties:
@@ -102,7 +102,7 @@ client but never produces nonsense.
 ## Out-of-band: the control channel
 
 `/mosey/control/` carries length-delimited
-[`ControlMessage`](../../internal/api/control.proto) envelopes. v1
+[`ControlMessage`](../../api/control.proto) envelopes. v1
 messages all flow attach → vterm and are fire-and-forget except
 `ListClients`, which replies with `ClientList` on the same stream.
 

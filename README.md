@@ -65,7 +65,7 @@ reattach / replay protocol. The full book lives under `docs/src/`.
 ## Clients
 
 - **Go**: the `mosey` binary itself is the reference Go client
-  (see `internal/attach/` for the dialer + `cmd/mosey/attach.go`
+  (see `attach/` for the dialer + `cmd/mosey/attach.go`
   for the CLI wrapper).
 - **TypeScript / browser**:
   [`clients/typescript/`](clients/typescript/) is the reference

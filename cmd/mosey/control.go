@@ -19,13 +19,13 @@ import (
 	"google.golang.org/protobuf/encoding/protodelim"
 
 	"github.com/firefly-engineering/mosey/cmd/internal/certflags"
-	"github.com/firefly-engineering/mosey/internal/api"
-	"github.com/firefly-engineering/mosey/internal/auth"
-	"github.com/firefly-engineering/mosey/internal/transport"
-	httpbackend "github.com/firefly-engineering/mosey/internal/transport/http2"
-	libp2pbackend "github.com/firefly-engineering/mosey/internal/transport/libp2p"
-	unixbackend "github.com/firefly-engineering/mosey/internal/transport/unix"
-	wsbackend "github.com/firefly-engineering/mosey/internal/transport/websocket"
+	"github.com/firefly-engineering/mosey/api"
+	"github.com/firefly-engineering/mosey/auth"
+	"github.com/firefly-engineering/mosey/transport"
+	httpbackend "github.com/firefly-engineering/mosey/transport/http2"
+	libp2pbackend "github.com/firefly-engineering/mosey/transport/libp2p"
+	unixbackend "github.com/firefly-engineering/mosey/transport/unix"
+	wsbackend "github.com/firefly-engineering/mosey/transport/websocket"
 )
 
 // runControl dispatches `mosey control <subcmd>`. Each subcommand

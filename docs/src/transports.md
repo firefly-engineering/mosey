@@ -24,7 +24,7 @@ libp2p and HTTPS uses one `Multi` wrapping both backends.
 ## libp2p backend
 
 The production cross-host transport.
-[`internal/transport/libp2p`](../../internal/transport/libp2p/)
+[`transport/libp2p`](../../transport/libp2p/)
 wraps go-libp2p with:
 
 - **Noise** for confidentiality and authentication of the
@@ -48,7 +48,7 @@ var, a dedicated registry).
 
 ## HTTP/2 backend
 
-[`internal/transport/http2`](../../internal/transport/http2/) ports
+[`transport/http2`](../../transport/http2/) ports
 the same `Stream` semantics onto HTTP/2 framing.
 
 ```
@@ -77,7 +77,7 @@ to bind.
 
 ## Unix domain socket backend
 
-[`internal/transport/unix`](../../internal/transport/unix/) speaks
+[`transport/unix`](../../transport/unix/) speaks
 the `unix://` scheme. Same-host attaches only — no network port,
 no TLS, no libp2p bootstrap.
 
@@ -114,7 +114,7 @@ Limitations:
 
 ## WebSocket backend
 
-[`internal/transport/websocket`](../../internal/transport/websocket/)
+[`transport/websocket`](../../transport/websocket/)
 speaks the `ws://` (cleartext) and `wss://` (TLS) schemes. The
 target audience is **browser clients** — every browser ships the
 `new WebSocket(url, protocols)` API, and the wire format goes
@@ -200,6 +200,6 @@ The contract is small:
 3. Tolerate concurrent handler registration, dials, and `Close()`.
 4. Honor `ctx.Done()` in `Dial` and in the `Serve()` accept loop.
 
-The integration tests under `internal/transport/http2/` are a good
+The integration tests under `transport/http2/` are a good
 template — they exercise the auth + PTY + control paths end-to-end
 against a real local listener.

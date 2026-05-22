@@ -1,0 +1,131 @@
+// mosey's control protocol — out-of-band messages between a vterm
+// and an attached client. Carried on the libp2p stream
+// `/mosey/control/1.0.0` as length-delimited [ControlMessage]
+// envelopes. Both sides may write; v1 only attach → vterm is used
+// (Resize, Signal). v2 will add vterm → attach state events.
+syntax = "proto3";
+
+package mosey.v1;
+
+option go_package = "github.com/firefly-engineering/mosey/api;api";
+
+// ControlMessage is the envelope carried on /mosey/control/. Each
+// frame is length-delimited (varint length prefix + serialized
+// proto) so a single stream multiplexes typed messages without a
+// separate framing layer.
+//
+// Adding a new payload variant is a non-breaking change as long as
+// the new field uses a fresh tag number. Old peers ignore unknown
+// payloads; new peers should fall back gracefully when they receive
+// an envelope whose payload they don't understand (e.g. log and
+// continue).
+message ControlMessage {
+  oneof payload {
+    Resize resize = 1;
+    Signal signal = 2;
+    SetMode set_mode = 3;
+    Demote demote = 4;
+    ListClients list_clients = 5;
+    ClientList client_list = 6;
+    Promote promote = 7;
+    Kick kick = 8;
+  }
+}
+
+// Resize requests that the remote PTY be set to the given size
+// (TIOCSWINSZ-equivalent). Attach sends one on connect and again
+// whenever its local terminal SIGWINCH fires.
+message Resize {
+  uint32 cols = 1;
+  uint32 rows = 2;
+}
+
+// Signal forwards a process signal to the vterm's child process.
+// Maps to a small, deliberately constrained set so v1 isn't a
+// signal-injection vector; the wider POSIX set can be reconsidered
+// once the authn story matures.
+message Signal {
+  enum Kind {
+    KIND_UNSPECIFIED = 0;
+    KIND_HUP = 1;
+    KIND_INT = 2;
+    KIND_TERM = 3;
+    KIND_USR1 = 4;
+    KIND_USR2 = 5;
+  }
+  Kind kind = 1;
+}
+
+// SetMode switches the vterm session's multi-client mode at
+// runtime. Owner-only — vterm silently drops the message from any
+// client whose [Identity] doesn't hold the Owner capability. The
+// new mode applies to *future* attaches; existing clients keep
+// their current permissions (use Demote to step down, future
+// Kick/Promote RPCs to manage others).
+message SetMode {
+  enum Kind {
+    KIND_UNSPECIFIED = 0;
+    KIND_SUPERSEDE = 1;
+    KIND_EXCLUSIVE = 2;
+    KIND_PRIMARY_OBSERVER = 3;
+    KIND_MULTI_WRITE = 4;
+  }
+  Kind kind = 1;
+}
+
+// Demote is the self-service write-permission drop. The client
+// sending Demote loses its write + resize permissions; if it
+// happened to hold the PrimaryObserver writer seat, the seat
+// becomes vacant (no auto-promotion). Useful for "going AFK; don't
+// let me typo into prod." No cap required — any client can demote
+// itself.
+message Demote {}
+
+// ListClients asks the vterm to enumerate currently-attached
+// clients. The server replies on the same control stream with a
+// ClientList message. Any authenticated client may issue this —
+// useful to non-Owner clients too (e.g. "who else is here").
+message ListClients {}
+
+// ClientList is the vterm's response to ListClients. Carries one
+// ClientInfo per attached client at the moment the request was
+// handled. The list is a snapshot, not a subscription.
+message ClientList {
+  repeated ClientInfo clients = 1;
+}
+
+// ClientInfo describes one attached client in the registry. Stable
+// fields only — internal session bookkeeping (channel depths, etc.)
+// stays off the wire.
+message ClientInfo {
+  // Stable identifier within the vterm session's lifetime. Used to
+  // target Promote / Kick. Not reused after a client disconnects.
+  int64 client_id = 1;
+
+  // Auth-layer role label ("owner", "reader", or a cert subject).
+  string label = 2;
+
+  // True when this client currently holds write permission given
+  // the session's mode + dynamic demotions.
+  bool can_write = 3;
+
+  // Latest reported terminal geometry, or zero if the client
+  // hasn't sent a Resize yet.
+  uint32 cols = 4;
+  uint32 rows = 5;
+}
+
+// Promote flips a client's write permission to true. Owner-only.
+// In PrimaryObserver, the promoted client becomes the writer seat
+// holder (a prior writer is demoted to observer). In MultiWrite /
+// Supersede / Exclusive, this is mostly a no-op since writers are
+// already permitted; the message exists for symmetry with Demote.
+message Promote {
+  int64 client_id = 1;
+}
+
+// Kick forcibly disconnects a client. Owner-only. The target's
+// PTY stream is closed; its attach.Run exits cleanly.
+message Kick {
+  int64 client_id = 1;
+}

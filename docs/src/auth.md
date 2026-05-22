@@ -75,7 +75,7 @@ mosey launch \
 
 ### What lives in a cert?
 
-The wire form is a protobuf (`internal/api/cert.proto`) carrying:
+The wire form is a protobuf (`api/cert.proto`) carrying:
 
 - The agent's Ed25519 public key (so the cert binds to its
   keypair — possessing the cert without the key is useless).

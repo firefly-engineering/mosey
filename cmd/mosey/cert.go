@@ -17,7 +17,7 @@ import (
 	"github.com/oklog/ulid/v2"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/firefly-engineering/mosey/internal/cert"
+	"github.com/firefly-engineering/mosey/cert"
 )
 
 func runCert(args []string, stdout, stderr *os.File) int {
