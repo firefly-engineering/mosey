@@ -1,7 +1,9 @@
 {
   "assignee": "",
   "blocked_by": [],
-  "blocks": [],
+  "blocks": [
+    "ship-0qs"
+  ],
   "created": "2026-05-22T06:42:39Z",
   "description": "Today every package an external Go module would need to consume mosey as a library — `transport`, `transport/libp2p`, `transport/unix`, `transport/http2`, `auth`, `cert`, `vterm`, `attach`, `streambuf`, and `api` (for the protocol-ID constants) — lives under `mosey/internal/`. Go's `internal/` rule makes them unimportable from outside this module, so the relationship described in `docs/src/relationship-to-shepherd.md` (\"shepherd consumes mosey as a library\") is currently impossible: shepherd cannot `import \"github.com/firefly-engineering/mosey/internal/transport\"`.\n\nThis is a hard prerequisite for shepherd's planned rebase onto mosey (it blocks even adding mosey to shepherd's `go.mod` in a useful way).\n\nTwo plausible shapes:\n\n1. **Move packages to module root or `pkg/`.** Direct, but ties the public Go API one-to-one to today's internal layout. Any rename later becomes a breaking change.\n2. **Thin `pkg/` re-export wrappers.** Each public package re-exports the types/funcs shepherd needs (`pkg/transport` aliases `internal/transport.Transport`, `pkg/vterm` aliases `internal/vterm.Session`/`Run`/`Options`, etc.). Keeps the internal/ layout free to evolve.\n\nEither way the minimum public surface for shepherd is:\n\n- `transport`: `Transport`, `Stream`, `Handler`, `Multi`, `ErrUnsupported`/`ErrUnsupportedScheme`\n- `transport/libp2p`: `New`, `Config` (incl. `Identity crypto.PrivKey`)\n- `transport/unix`: `New`, `Options`, `Scheme`\n- `auth`: `Wrap`, `Authenticator`, `Identity`, `IdentityOf`, the PSK + cert constructors\n- `cert`: `NewMasterMnemonic`, `MasterFromMnemonic`, `MasterPublicKey`, `Sign`, `Verify`, `Claim`\n- `vterm`: `Run`, `Options`, `Mode` constants\n- `attach`: `Run`, `Options`\n- `streambuf`: `OutputRing`, `InputQueue`, defaults + drop policies\n- `api`: the `/mosey/...` protocol-ID constants\n\nOnce this lands the wire model and HKDF labels become a commitment, not an implementation detail — worth pinning the \"changing them is a deliberate version bump\" rule (already in AGENTS.md) into the public package doc too.",
   "id": "ship-y2s",
@@ -10,5 +12,5 @@
   "status": "open",
   "title": "Lift consumed packages out of internal/ so external modules can import them",
   "type": "task",
-  "updated_at": "2026-05-22T06:42:39Z"
+  "updated_at": "2026-05-22T06:43:24Z"
 }
