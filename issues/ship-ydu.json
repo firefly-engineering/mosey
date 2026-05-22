@@ -1,5 +1,5 @@
 {
-  "assignee": "",
+  "assignee": "unknown",
   "blocked_by": [
     "ship-y2s"
   ],
@@ -9,8 +9,8 @@
   "id": "ship-ydu",
   "labels": [],
   "priority": 3,
-  "status": "open",
+  "status": "in_progress",
   "title": "pkg/screen: rendered-screen view of a mosey PTY stream",
   "type": "task",
-  "updated_at": "2026-05-22T06:54:05Z"
+  "updated_at": "2026-05-22T07:32:38Z"
 }
