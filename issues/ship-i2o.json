@@ -1,0 +1,14 @@
+{
+  "assignee": "",
+  "blocked_by": [],
+  "blocks": [],
+  "created": "2026-05-22T06:43:17Z",
+  "description": "`auth.Wrap` produces an authenticated `Identity` per stream by running the `/mosey/auth/1.0.0` handshake over the inner transport, regardless of which backend carried the bytes. For the libp2p and http2 backends the model is uniform: the handshake runs end-to-end and `IdentityOf(stream)` returns the cert/PSK-derived caller.\n\nThe unix backend (`internal/transport/unix`) already exposes peer creds (uid+pid) as `RemoteID` so `auth.Wrap` can correlate the auth and application streams across separate sockets. But the *capability semantics* in that case aren't pinned in docs: what's the right `Claim` for a same-uid caller? Same-uid + same-pid as the listener (i.e. an in-process caller)? Should the unix backend short-circuit the auth handshake entirely when peer creds match a trust policy, or is the PSK-over-unix path the canonical answer?\n\nThe shape this should take, regardless of the answer:\n\n- A short doc section under `docs/src/transports.md` or `auth.md` that states the identity model for each backend, including what `IdentityOf` returns under each.\n- A test in `internal/vterm` (or wherever the cross-backend integration suite ends up) that asserts `IdentityOf(stream)` returns a sensible value when the stream is served over each registered backend.\n- If a same-host \"peer creds = owner caps\" shortcut is acceptable: an `auth.Authenticator` that grants owner caps to a configured uid + pid range, so unix-backend traffic doesn't pay the PSK handshake.\n\nBlocked by `ship-y2s` (public API) because external consumers can't observe `Identity` until the package is exported. The shepherd rebase will need this resolved before it composes a `Multi` of `libp2p + unix` behind `auth.Wrap`.",
+  "id": "ship-i2o",
+  "labels": [],
+  "priority": 3,
+  "status": "open",
+  "title": "Document and verify uniform auth.Identity semantics across all backends",
+  "type": "task",
+  "updated_at": "2026-05-22T06:43:17Z"
+}
