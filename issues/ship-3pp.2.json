@@ -1,0 +1,15 @@
+{
+  "assignee": "",
+  "blocked_by": [],
+  "blocks": [],
+  "created": "2026-05-23T15:21:49Z",
+  "description": "Implement the wire-level primitives the cert handshake needs, extending clients/typescript/src/proto.ts.\n\nTwo pieces:\n\n1. protodelim framing — Go uses protodelim.MarshalTo/UnmarshalFrom which prefixes each protobuf message with a varint length. The current TS Stream.readFramed() handles WebSocket binary frames (one message per frame); cert messages are length-delimited inside a stream. Add a varint-length frame reader/writer that wraps the existing transport.\n\n2. Hand-rolled protobuf encode/decode for the messages in api/cert.proto:\n   - Cert { bytes content, bytes signature }\n   - SignedCertContent { string agent_id, bytes peer_pubkey, string label, uint32 caps_bits, Timestamp not_before, Timestamp not_after, string serial, string workspace_id }\n   - CertHandshakeMessage { oneof payload { CertHello hello = 1, SignedNonce proof = 2 } }\n   - CertHello { Cert cert, bytes nonce }\n   - SignedNonce { bytes signature }\n\nExisting proto.ts already hand-rolls the auth messages (no protobuf runtime), so stay consistent — keep zero protobuf dependencies. Make encoding deterministic (matches Go's deterministic=true used at signing time).\n\nNote: SignedCertContent is signed by the master; the bytes that are signed are Cert.content, NOT a re-serialization. So we never need to re-encode SignedCertContent for verification — only decode it after the signature passes.",
+  "id": "ship-3pp.2",
+  "labels": [],
+  "parent": "ship-3pp",
+  "priority": 2,
+  "status": "open",
+  "title": "TS client: cert wire format (protodelim + protobuf encode/decode)",
+  "type": "task",
+  "updated_at": "2026-05-23T15:21:49Z"
+}
