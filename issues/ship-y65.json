@@ -15,11 +15,15 @@
     {
       "text": "Resolved as 'not a mosey bug'. After bypassing the t.Skip in shepherd's TestRun_Libp2pWithCert and capturing the full race report, the racing operations are:\n\n  Read:  bytes.(*Buffer).String() — test reads errOut.String() at main_test.go:248\n  Write: bytes.(*Buffer).Write() via slog.TextHandler — shepherd's gRPC Serve goroutine logging at server.go:229, spawned from main.go:320\n\nbytes.Buffer is not concurrent-safe; the test reads it while a background goroutine spawned by run() is still writing to it via slog. The deep mosey/libp2p/fx frames in the original trace are the goroutine SPAWN chain (the writing goroutine was created inside fx wiring during libp2pbackend.New), not the racing code — Go's race detector lists goroutine ancestry in 'created at' which is easy to misread as the race site.\n\nFix is on the shepherd side: wait for Serve's goroutine to exit before run() returns. Filed shep-wo5 with the diagnosis + fix options.\n\nClosing ship-y65 as 'not a mosey issue' — no mosey-side docs / serialization / upstream report needed.",
       "timestamp": "2026-05-23T16:20:34Z"
+    },
+    {
+      "text": "Not a mosey bug. Race traced to a bytes.Buffer in shepherd's own test plumbing: cmd/shepherd-d run() returns while the gRPC Serve goroutine is still flushing slog into the shared errOut buffer used by tests.\n\nThe original race report's goroutine-creation chain walked through fx wiring inside libp2pbackend.New (because that's where the Serve goroutine was ancestrally spawned), which misled the trace toward libp2p/fx. The actual racing read/write at the top of the report were both bytes.Buffer ops in shepherd code.\n\nFixed shepherd-side in firefly-engineering/shepherd shep-wo5 (branch shep-wo5/serve-shutdown-race) by making the Serve goroutine signal completion via a serveDone channel that the deferred Stop() waits on.\n\nSuggest closing this as not-a-bug.",
+      "timestamp": "2026-05-23T16:30:53Z"
     }
   ],
   "priority": 3,
   "status": "closed",
   "title": "Race detector flags concurrent libp2p.New() across same-binary tests",
   "type": "bug",
-  "updated_at": "2026-05-23T16:20:34Z"
+  "updated_at": "2026-05-23T16:30:53Z"
 }
