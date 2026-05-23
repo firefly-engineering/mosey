@@ -1,5 +1,5 @@
 {
-  "assignee": "",
+  "assignee": "unknown",
   "blocked_by": [
     "ship-3pp.1",
     "ship-3pp.2"
@@ -13,8 +13,8 @@
   "labels": [],
   "parent": "ship-3pp",
   "priority": 2,
-  "status": "open",
+  "status": "in_progress",
   "title": "TS client: cert verification",
   "type": "task",
-  "updated_at": "2026-05-23T15:22:40Z"
+  "updated_at": "2026-05-23T15:40:50Z"
 }
