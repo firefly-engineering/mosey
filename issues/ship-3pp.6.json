@@ -1,0 +1,15 @@
+{
+  "assignee": "",
+  "blocked_by": [],
+  "blocks": [],
+  "created": "2026-05-23T15:22:35Z",
+  "description": "Add an e2e test in clients/typescript/test/ that exercises the cert path end-to-end, matching the existing PSK e2e structure.\n\nSetup the test fixture:\n1. Generate a master key (Ed25519). Either via mosey cert mint-master --out=tmpdir or do it in-process using the cert/master.go primitives, whichever the existing PSK e2e prefers.\n2. Mint an agent cert for the client side.\n3. Mint another agent cert for the server side (mosey launch). Different agent_id, both owner caps, same workspace_id.\n4. Spawn 'mosey launch --cert=server.cert --key=server.key --master-pub=master.pub --workspace=demo -- bash' on a random port.\n5. Construct MoseyClient.connect with auth.type='cert' and the client cert/key, dial the launched endpoint.\n6. Assert: connects, can write a keystroke, observes PTY output.\n\nNegative tests to include:\n- Wrong masterPub → handshake rejected (ErrUnauthorized on the wire, throw on the TS side).\n- Expired cert (not_after in the past) → rejected.\n- Cert from a different workspace_id → rejected.\n- Revoked serial (pass via revoked option) → rejected.\n\nThis is the cross-language contract test. If anything here passes locally but fails against a fresh Go build, that's the bug.\n\nDepends on ship-3pp.5.",
+  "id": "ship-3pp.6",
+  "labels": [],
+  "parent": "ship-3pp",
+  "priority": 2,
+  "status": "open",
+  "title": "TS client: e2e test against live mosey launch with cert auth",
+  "type": "task",
+  "updated_at": "2026-05-23T15:22:35Z"
+}
