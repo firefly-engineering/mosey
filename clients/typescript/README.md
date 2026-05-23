@@ -5,8 +5,11 @@ the WebSocket transport, drives the PSK auth handshake, and
 exposes the PTY byte stream as a callback-friendly API.
 
 Zero runtime dependencies: uses the platform `WebSocket`,
-`crypto.subtle`, and `TextEncoder`/`TextDecoder`. Works in any
-modern browser and in Node 22+ (where `WebSocket` became a global).
+`crypto.subtle`, and `TextEncoder`/`TextDecoder`. The cert auth
+path additionally relies on `crypto.subtle`'s `Ed25519` algorithm,
+which lands in Chrome 113+, Firefox 130+, Safari 17+, and Node
+18.4+. Works in any modern browser and in Node 22+ (where
+`WebSocket` became a global).
 
 ## Status
 

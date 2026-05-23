@@ -102,3 +102,102 @@ export function randomNonce(): Uint8Array {
 export function labelBytes(label: string): Uint8Array {
   return new TextEncoder().encode(label);
 }
+
+// ────────────────────────────────────────────────────────────────
+// Ed25519 — used by the cert auth path (see cert.ts, cert-auth.ts).
+//
+// Implementation: WebCrypto subtle's "Ed25519" algorithm. Available
+// in Chrome 113+, Firefox 130+, Safari 17+, and Node 18.4+. Keeps
+// the package zero-dependency (matches the README promise).
+//
+// Key formats match the Go side:
+//   - public key:  32 raw bytes (Ed25519 verifying key)
+//   - private key: 64 bytes — 32-byte seed + 32-byte public key, the
+//                   format used by Go's ed25519.PrivateKey. The first
+//                   32 bytes are imported as the "raw" PKCS#8 seed
+//                   for subtle.
+// ────────────────────────────────────────────────────────────────
+
+export const ED25519_PUBLIC_KEY_SIZE = 32;
+export const ED25519_PRIVATE_KEY_SIZE = 64;
+export const ED25519_SIGNATURE_SIZE = 64;
+
+// ed25519Verify returns true iff `signature` is a valid Ed25519
+// signature of `message` under `publicKey`. Throws on malformed
+// key (wrong length, not importable). Verification failures return
+// false rather than throwing — callers translate that into their
+// own auth-rejection error.
+export async function ed25519Verify(
+  publicKey: Uint8Array,
+  message: Uint8Array,
+  signature: Uint8Array,
+): Promise<boolean> {
+  if (publicKey.length !== ED25519_PUBLIC_KEY_SIZE) {
+    throw new Error(`mosey/crypto: Ed25519 public key length ${publicKey.length}, want ${ED25519_PUBLIC_KEY_SIZE}`);
+  }
+  if (signature.length !== ED25519_SIGNATURE_SIZE) {
+    return false;
+  }
+  const key = await crypto.subtle.importKey(
+    "raw",
+    asBufferSource(publicKey),
+    "Ed25519",
+    false,
+    ["verify"],
+  );
+  return crypto.subtle.verify(
+    "Ed25519",
+    key,
+    asBufferSource(signature),
+    asBufferSource(message),
+  );
+}
+
+// ed25519Sign signs `message` with `privateKey` and returns a
+// 64-byte signature. `privateKey` is the Go-style 64-byte form
+// (32-byte seed || 32-byte public key); only the seed half is
+// imported into subtle. Throws on malformed key.
+export async function ed25519Sign(
+  privateKey: Uint8Array,
+  message: Uint8Array,
+): Promise<Uint8Array> {
+  if (privateKey.length !== ED25519_PRIVATE_KEY_SIZE) {
+    throw new Error(`mosey/crypto: Ed25519 private key length ${privateKey.length}, want ${ED25519_PRIVATE_KEY_SIZE}`);
+  }
+  const seed = privateKey.subarray(0, 32);
+  // WebCrypto subtle wants the seed wrapped in a minimal PKCS#8
+  // envelope. The fixed prefix below is the OneAsymmetricKey
+  // (RFC 5958) header for Ed25519 with an inline OCTET STRING of
+  // length 32 — i.e. exactly the seed format Go exposes as the
+  // first half of its ed25519.PrivateKey.
+  const pkcs8 = wrapEd25519SeedInPKCS8(seed);
+  const key = await crypto.subtle.importKey(
+    "pkcs8",
+    asBufferSource(pkcs8),
+    "Ed25519",
+    false,
+    ["sign"],
+  );
+  const sig = await crypto.subtle.sign("Ed25519", key, asBufferSource(message));
+  return new Uint8Array(sig);
+}
+
+// wrapEd25519SeedInPKCS8 builds the minimal PKCS#8 / OneAsymmetricKey
+// DER envelope expected by subtle.importKey("pkcs8", ..., "Ed25519").
+// Fixed header (16 bytes) covers the version, AlgorithmIdentifier
+// (id-Ed25519 = 1.3.101.112), and OCTET STRING tag/length for the
+// 32-byte inner key bytes. See RFC 8410 §7 for the structure.
+function wrapEd25519SeedInPKCS8(seed: Uint8Array): Uint8Array {
+  const prefix = new Uint8Array([
+    0x30, 0x2e, // SEQUENCE, length 46
+    0x02, 0x01, 0x00, // INTEGER version 0
+    0x30, 0x05, // SEQUENCE (AlgorithmIdentifier), length 5
+    0x06, 0x03, 0x2b, 0x65, 0x70, // OID 1.3.101.112
+    0x04, 0x22, // OCTET STRING, length 34
+    0x04, 0x20, // (inner) OCTET STRING, length 32
+  ]);
+  const out = new Uint8Array(prefix.length + seed.length);
+  out.set(prefix, 0);
+  out.set(seed, prefix.length);
+  return out;
+}

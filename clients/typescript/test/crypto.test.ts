@@ -2,6 +2,8 @@ import { describe, expect, test } from "vitest";
 import {
   constantTimeEqual,
   derivePSKKey,
+  ed25519Sign,
+  ed25519Verify,
   hmacSHA256,
   MAC_LABEL_CLIENT,
   MAC_LABEL_SERVER,
@@ -94,6 +96,70 @@ describe("constants", () => {
   });
 });
 
+describe("Ed25519", () => {
+  // Vector generated from Go's crypto/ed25519 with a deterministic
+  // seed of bytes 0x00..0x1f. Regenerate by running the standalone
+  // program in the ship-3pp.1 commit body.
+  const seed = fromHex(
+    "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+  );
+  const pub = fromHex(
+    "03a107bff3ce10be1d70dd18e74bc09967e4d6309ba50d5f1ddc8664125531b8",
+  );
+  // 64-byte Go-style private key = seed || public.
+  const priv = new Uint8Array(64);
+  priv.set(seed, 0);
+  priv.set(pub, 32);
+  const message = new TextEncoder().encode("mosey-cert-v1 test message");
+  const goSig = fromHex(
+    "3887ae7b22817ba1e44c58a9251447f35d1cdc5304f04f5d9ce4d6c5d20b34af3e74e45c015f9ab744a3b2e8fb9ce0a6475a7126c2b3470a010fbcc2bc72ed0d",
+  );
+
+  test("verifies a Go-produced signature", async () => {
+    expect(await ed25519Verify(pub, message, goSig)).toBe(true);
+  });
+
+  test("rejects a tampered message", async () => {
+    const tampered = new Uint8Array(message);
+    tampered[0] ^= 0x01;
+    expect(await ed25519Verify(pub, tampered, goSig)).toBe(false);
+  });
+
+  test("rejects a wrong-length signature", async () => {
+    expect(await ed25519Verify(pub, message, goSig.slice(0, 32))).toBe(false);
+  });
+
+  test("throws on wrong-length public key", async () => {
+    await expect(
+      ed25519Verify(pub.slice(0, 16), message, goSig),
+    ).rejects.toThrow(/public key length/);
+  });
+
+  test("sign round-trip with the Go private key matches the Go signature", async () => {
+    const sig = await ed25519Sign(priv, message);
+    expect(toHex(sig)).toBe(toHex(goSig));
+  });
+
+  test("verifies its own sign output", async () => {
+    const sig = await ed25519Sign(priv, message);
+    expect(await ed25519Verify(pub, message, sig)).toBe(true);
+  });
+
+  test("throws on wrong-length private key", async () => {
+    await expect(ed25519Sign(seed, message)).rejects.toThrow(
+      /private key length/,
+    );
+  });
+});
+
 function toHex(b: Uint8Array): string {
   return Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("");
+}
+
+function fromHex(s: string): Uint8Array {
+  const out = new Uint8Array(s.length / 2);
+  for (let i = 0; i < out.length; i++) {
+    out[i] = parseInt(s.slice(i * 2, i * 2 + 2), 16);
+  }
+  return out;
 }
