@@ -1,0 +1,14 @@
+{
+  "assignee": "",
+  "blocked_by": [],
+  "blocks": [],
+  "created": "2026-05-23T15:21:30Z",
+  "description": "Bring the cert-auth backend to @firefly-engineering/mosey-client. Today the TS client only speaks PSK (auth.ts); the Go side has full cert auth in auth/cert.go using protodelim-framed messages from api/cert.proto.\n\nMotivation: the shepherd browser client wants to derive per-client certs from a master key (BIP-39 / wallet) and present them to remote agents. Without cert auth in the TS client, the browser is stuck on shared secrets.\n\nWire-level scope: Ed25519 sign/verify, protodelim length-prefixed framing, encode/decode for Cert, SignedCertContent, CertHandshakeMessage, CertHello, SignedNonce. Verification: master signature over Cert.content, then check workspace_id + not_before/not_after + revocation set on the parsed SignedCertContent.\n\nHandshake (symmetric — see auth/cert.go runHandshake): client sends CertHello first, then reads peer hello, verifies peer cert, signs 'mosey-cert-v1' || peer_nonce with own Ed25519 key, sends SignedNonce, reads peer SignedNonce, verifies against peer cert's peer_pubkey. Returns Identity built from cert caps.\n\nOut of scope: BIP-39 mnemonic derivation (that's a caller concern — TS client just consumes a cert + private key); revocation file reload on SIGHUP (browser has no signals — caller passes initial set + can call an updateRevoked() method).\n\nCross-ref: shepherd proposal at docs/src/proposals/ipfs-topology.md §10.1 in firefly-engineering/shepherd flags this as the critical-path gap for its browser client.",
+  "id": "ship-3pp",
+  "labels": [],
+  "priority": 2,
+  "status": "open",
+  "title": "TS client: cert auth",
+  "type": "epic",
+  "updated_at": "2026-05-23T15:21:30Z"
+}
