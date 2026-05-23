@@ -1,7 +1,8 @@
 {
   "assignee": "",
   "blocked_by": [
-    "ship-3pp.1"
+    "ship-3pp.1",
+    "ship-3pp.2"
   ],
   "blocks": [],
   "created": "2026-05-23T15:22:00Z",
