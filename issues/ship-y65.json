@@ -10,11 +10,15 @@
     {
       "text": "Filed shep-wo5 in firefly-engineering/shepherd asking for a precise repro — current shepherd repro instructions weren't enough to reproduce here (tried 3+ concurrent New, with and without DHT, on darwin/arm64 Go 1.26 against go-libp2p v0.48.0 — clean). Picked up one extra clue: shepherd's racing test (internal/pubsub/libp2p_test.go) calls libp2pgo.New directly, not via mosey, so this is unambiguously upstream and not anything in mosey's wrapper path. Holding ship-y65 until shep-wo5 lands a minimal repro.",
       "timestamp": "2026-05-23T16:03:32Z"
+    },
+    {
+      "text": "Resolved as 'not a mosey bug'. After bypassing the t.Skip in shepherd's TestRun_Libp2pWithCert and capturing the full race report, the racing operations are:\n\n  Read:  bytes.(*Buffer).String() — test reads errOut.String() at main_test.go:248\n  Write: bytes.(*Buffer).Write() via slog.TextHandler — shepherd's gRPC Serve goroutine logging at server.go:229, spawned from main.go:320\n\nbytes.Buffer is not concurrent-safe; the test reads it while a background goroutine spawned by run() is still writing to it via slog. The deep mosey/libp2p/fx frames in the original trace are the goroutine SPAWN chain (the writing goroutine was created inside fx wiring during libp2pbackend.New), not the racing code — Go's race detector lists goroutine ancestry in 'created at' which is easy to misread as the race site.\n\nFix is on the shepherd side: wait for Serve's goroutine to exit before run() returns. Filed shep-wo5 with the diagnosis + fix options.\n\nClosing ship-y65 as 'not a mosey issue' — no mosey-side docs / serialization / upstream report needed.",
+      "timestamp": "2026-05-23T16:20:34Z"
     }
   ],
   "priority": 3,
   "status": "open",
   "title": "Race detector flags concurrent libp2p.New() across same-binary tests",
   "type": "bug",
-  "updated_at": "2026-05-23T16:03:32Z"
+  "updated_at": "2026-05-23T16:20:34Z"
 }
