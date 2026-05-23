@@ -1,0 +1,15 @@
+{
+  "assignee": "",
+  "blocked_by": [],
+  "blocks": [],
+  "created": "2026-05-23T15:21:39Z",
+  "description": "Decide how the TS client signs and verifies Ed25519 for cert auth.\n\nOptions:\n1. WebCrypto subtle ('Ed25519' algorithm) — zero deps, but coverage is uneven (Firefox shipped it, Safari shipped it, Chrome/Edge as of recent versions; Node 22+ also has it). Some older targets may not.\n2. @noble/ed25519 — pure JS, ~5KB, audited, works everywhere. Breaks the README's 'zero runtime dependencies' promise.\n3. Hybrid: use subtle if available, fall back to noble.\n\nToday the TS client (crypto.ts) is HMAC-only via subtle, no async key import for asymmetric keys.\n\nDecision criteria: minimum supported browser set for shepherd's browser client (TBD on shepherd side), bundle-size budget, audit posture for the cert path. Document the decision in clients/typescript/README.md so the dep stance is clear either way.",
+  "id": "ship-3pp.1",
+  "labels": [],
+  "parent": "ship-3pp",
+  "priority": 2,
+  "status": "open",
+  "title": "TS client: pick Ed25519 implementation (subtle vs noble)",
+  "type": "task",
+  "updated_at": "2026-05-23T15:21:39Z"
+}
