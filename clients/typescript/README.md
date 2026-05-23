@@ -13,10 +13,11 @@ which lands in Chrome 113+, Firefox 130+, Safari 17+, and Node
 
 ## Status
 
-Pre-v0.1. PSK auth + the PTY byte stream + the Resize control
-message work end-to-end against a live `mosey launch` (see the
-e2e test). Cert auth, the rest of the control protocol, and a
-companion `xterm.js` integration package are on the roadmap.
+Pre-v0.1. PSK auth, cert auth, the PTY byte stream, and the
+Resize control message work end-to-end against a live
+`mosey launch` (see the e2e test). The rest of the control
+protocol (Signal, SetMode, Promote, Kick, Demote, ListClients) and
+a companion `xterm.js` integration package are on the roadmap.
 
 ## Install
 
@@ -51,6 +52,35 @@ client.resize(120, 40);
 // On exit:
 await client.close();
 ```
+
+## Cert auth
+
+The browser equivalent of `mosey launch --cert=... --key=... --master-pub=... --workspace=...`.
+Master keys live on operator laptops, not in browser tabs — mint
+the agent cert + key elsewhere, then pass the bytes in:
+
+```ts
+const client = await MoseyClient.connect({
+  endpoint: "wss://host:8443",
+  auth: {
+    type: "cert",
+    cert: agentCertBytes,         // encoded api.Cert
+    privateKey: agentPrivateKey,  // 64-byte Ed25519 (Go's seed||pub)
+    masterPub: workspaceMasterPub,// 32-byte Ed25519
+    workspaceId: "demo",
+    revoked: new Set<string>(),   // optional initial revocation list
+  },
+});
+
+// Later, push an updated revocation set (applies to future
+// reconnect / resume — there is no SIGHUP in the browser):
+client.updateRevoked(new Set(["01J0SERIAL"]));
+```
+
+`connect` validates the local cert + key pair before opening any
+socket, so common config mistakes (wrong master, expired cert,
+mismatched key) surface synchronously with a `mosey/client: ...`
+prefix.
 
 ## With xterm.js
 
