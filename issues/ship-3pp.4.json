@@ -5,7 +5,9 @@
     "ship-3pp.2",
     "ship-3pp.3"
   ],
-  "blocks": [],
+  "blocks": [
+    "ship-3pp.5"
+  ],
   "created": "2026-05-23T15:22:14Z",
   "description": "Implement the symmetric cert handshake — runCertHandshake() in clients/typescript/src/cert-auth.ts (sibling to auth.ts which holds the PSK handshake).\n\nMirror auth/cert.go runHandshake with clientFirst=true (we are always the client on the TS side):\n\n1. Generate 32-byte random nonce (myNonce) via crypto.getRandomValues.\n2. Send CertHello { cert: localCert, nonce: myNonce } via protodelim frame.\n3. Read peer CertHandshakeMessage; require .hello variant.\n4. Verify peer cert via cert.ts (ship-3pp.3) → peerClaim.\n5. Check peer nonce length == 32. Otherwise ErrUnauthorized.\n6. Sign 'mosey-cert-v1' || peerHello.nonce with localPriv → mySig.\n7. Send CertHandshakeMessage { proof: SignedNonce { signature: mySig } }.\n8. Read peer CertHandshakeMessage; require .proof variant.\n9. Verify Ed25519(peerClaim.peer_pubkey, 'mosey-cert-v1' || myNonce, peerProof.signature). Mismatch = ErrUnauthorized.\n10. Wait for the post-handshake ackOK byte (0x01), same as PSK — auth/wrap.go writes it for both backends.\n11. Return Identity { label: peerClaim.label, caps: { owner, write: write||owner, resize: resize||owner } }.\n\nFailure mode: any verification failure throws an error with the 'mosey/auth(cert):' prefix matching the Go side's errPrefixCert convention.\n\nDepends on ship-3pp.2 (wire format) and ship-3pp.3 (verification).",
   "id": "ship-3pp.4",
@@ -15,5 +17,5 @@
   "status": "open",
   "title": "TS client: cert handshake",
   "type": "task",
-  "updated_at": "2026-05-23T15:22:40Z"
+  "updated_at": "2026-05-23T15:22:41Z"
 }

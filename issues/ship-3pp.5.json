@@ -1,6 +1,8 @@
 {
   "assignee": "",
-  "blocked_by": [],
+  "blocked_by": [
+    "ship-3pp.4"
+  ],
   "blocks": [],
   "created": "2026-05-23T15:22:24Z",
   "description": "Wire the cert handshake into the public MoseyClient API in clients/typescript/src/client.ts and re-export from index.ts.\n\nAdd a discriminated-union branch to the existing auth option:\n\n  auth: { type: 'psk', secret: string, label?: string }\n      | { type: 'cert', cert: Uint8Array, privateKey: Uint8Array, masterPub: Uint8Array, workspaceId: string, revoked?: Set\u003cstring\u003e }\n\ncert: the encoded api.Cert protobuf bytes.\nprivateKey: 64-byte Ed25519 private key matching the cert's peer_pubkey.\nmasterPub: 32-byte Ed25519 public key the verifier authenticates the server's cert against.\n\nValidate at connect time:\n- privateKey.length == 64\n- masterPub.length == 32\n- workspaceId non-empty\n- localCert verifies against masterPub + workspaceId (fail fast on config errors, matches NewCertAuth in auth/cert.go)\n- peer_pubkey in localCert matches the public half of privateKey (also matches NewCertAuth)\n\nExpose updateRevoked(set) on the client instance for callers that want to update the revocation set without reconnecting.\n\nUpdate clients/typescript/README.md: cert quickstart, remove cert auth from the 'roadmap' bullet, document the dep stance from ship-3pp.1.\n\nDepends on ship-3pp.4.",
@@ -11,5 +13,5 @@
   "status": "open",
   "title": "TS client: public cert-auth API in MoseyClient.connect",
   "type": "task",
-  "updated_at": "2026-05-23T15:22:24Z"
+  "updated_at": "2026-05-23T15:22:41Z"
 }
