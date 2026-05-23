@@ -279,3 +279,177 @@ export function encodeControlResize(r: Resize): Uint8Array {
   // ControlMessage.resize has field number 1.
   return encodeBytesField(1, inner);
 }
+
+// ────────────────────────────────────────────────────────────────
+// Cert messages — match api/cert.proto
+//
+// On the Go side, the master signs SignedCertContent serialized
+// with proto.MarshalOptions{Deterministic: true}; we mirror that
+// canonical form by emitting fields in ascending field-number
+// order with proto3 default-value omission. Verification never
+// re-encodes SignedCertContent — the signature covers the bytes
+// already on the wire (Cert.content) — so we only need a decoder
+// for SignedCertContent here.
+// ────────────────────────────────────────────────────────────────
+
+export interface Cert {
+  content: Uint8Array;
+  signature: Uint8Array;
+}
+
+export interface Timestamp {
+  seconds: bigint;
+  nanos: number;
+}
+
+export interface SignedCertContent {
+  agentId: string;
+  peerPubkey: Uint8Array;
+  label: string;
+  capsBits: number;
+  notBefore: Timestamp;
+  notAfter: Timestamp;
+  serial: string;
+  workspaceId: string;
+}
+
+export interface CertHello {
+  cert: Cert;
+  nonce: Uint8Array;
+}
+
+export interface SignedNonce {
+  signature: Uint8Array;
+}
+
+// encodeCert serializes a Cert. Used to round-trip the local cert
+// in tests and to embed in CertHello during the handshake.
+export function encodeCert(c: Cert): Uint8Array {
+  return concat([
+    encodeBytesField(1, c.content),
+    encodeBytesField(2, c.signature),
+  ]);
+}
+
+// decodeCert parses a Cert frame (the bytes the Go side wrote with
+// proto.Marshal(Cert)).
+export function decodeCert(buf: Uint8Array): Cert {
+  let content: Uint8Array = new Uint8Array(0);
+  let signature: Uint8Array = new Uint8Array(0);
+  for (const { field, value } of iterFields(buf)) {
+    if (field === 1) content = value as Uint8Array;
+    else if (field === 2) signature = value as Uint8Array;
+  }
+  return { content, signature };
+}
+
+// decodeSignedCertContent parses the bytes Cert.content carries.
+// Caller MUST verify Cert.signature against Cert.content with the
+// master's public key BEFORE trusting any field returned here.
+export function decodeSignedCertContent(buf: Uint8Array): SignedCertContent {
+  let agentId = "";
+  let peerPubkey: Uint8Array = new Uint8Array(0);
+  let label = "";
+  let capsBits = 0;
+  let notBefore: Timestamp = { seconds: 0n, nanos: 0 };
+  let notAfter: Timestamp = { seconds: 0n, nanos: 0 };
+  let serial = "";
+  let workspaceId = "";
+  for (const { field, value } of iterFields(buf)) {
+    switch (field) {
+      case 1:
+        agentId = new TextDecoder().decode(value as Uint8Array);
+        break;
+      case 2:
+        peerPubkey = value as Uint8Array;
+        break;
+      case 3:
+        label = new TextDecoder().decode(value as Uint8Array);
+        break;
+      case 4:
+        capsBits = Number(value as bigint);
+        break;
+      case 5:
+        notBefore = decodeTimestamp(value as Uint8Array);
+        break;
+      case 6:
+        notAfter = decodeTimestamp(value as Uint8Array);
+        break;
+      case 7:
+        serial = new TextDecoder().decode(value as Uint8Array);
+        break;
+      case 8:
+        workspaceId = new TextDecoder().decode(value as Uint8Array);
+        break;
+    }
+  }
+  return { agentId, peerPubkey, label, capsBits, notBefore, notAfter, serial, workspaceId };
+}
+
+// decodeTimestamp parses google.protobuf.Timestamp:
+//   message Timestamp { int64 seconds = 1; int32 nanos = 2; }
+// Both are varints. seconds is int64 — Go encodes negative values
+// as 10-byte sign-extended varints, but mosey certs never use
+// pre-1970 timestamps so we treat it as unsigned-safe.
+function decodeTimestamp(buf: Uint8Array): Timestamp {
+  let seconds = 0n;
+  let nanos = 0;
+  for (const { field, value } of iterFields(buf)) {
+    if (field === 1) seconds = value as bigint;
+    else if (field === 2) nanos = Number(value as bigint);
+  }
+  return { seconds, nanos };
+}
+
+// encodeCertHelloMessage wraps a CertHello as a
+// CertHandshakeMessage with the `hello` oneof variant set
+// (field 1). Result is the inner message body — the caller passes
+// it through withProtodelim() before writing to the wire.
+export function encodeCertHelloMessage(h: CertHello): Uint8Array {
+  const helloInner = concat([
+    encodeBytesField(1, encodeCert(h.cert)),
+    encodeBytesField(2, h.nonce),
+  ]);
+  return encodeBytesField(1, helloInner);
+}
+
+// encodeCertProofMessage wraps a SignedNonce as a
+// CertHandshakeMessage with the `proof` oneof variant set
+// (field 2). Same framing convention as encodeCertHelloMessage.
+export function encodeCertProofMessage(p: SignedNonce): Uint8Array {
+  const proofInner = encodeBytesField(1, p.signature);
+  return encodeBytesField(2, proofInner);
+}
+
+// decodeCertHandshakeMessage returns whichever oneof variant the
+// peer sent. Caller dispatches on which is defined — exactly one
+// will be, on a well-formed message.
+export function decodeCertHandshakeMessage(buf: Uint8Array): {
+  hello?: CertHello;
+  proof?: SignedNonce;
+} {
+  const out: { hello?: CertHello; proof?: SignedNonce } = {};
+  for (const { field, value } of iterFields(buf)) {
+    if (field === 1) out.hello = decodeCertHello(value as Uint8Array);
+    else if (field === 2) out.proof = decodeSignedNonce(value as Uint8Array);
+  }
+  return out;
+}
+
+function decodeCertHello(buf: Uint8Array): CertHello {
+  let cert: Cert = { content: new Uint8Array(0), signature: new Uint8Array(0) };
+  let nonce: Uint8Array = new Uint8Array(0);
+  for (const { field, value } of iterFields(buf)) {
+    if (field === 1) cert = decodeCert(value as Uint8Array);
+    else if (field === 2) nonce = value as Uint8Array;
+  }
+  return { cert, nonce };
+}
+
+function decodeSignedNonce(buf: Uint8Array): SignedNonce {
+  let signature: Uint8Array = new Uint8Array(0);
+  for (const { field, value } of iterFields(buf)) {
+    if (field === 1) signature = value as Uint8Array;
+  }
+  return { signature };
+}

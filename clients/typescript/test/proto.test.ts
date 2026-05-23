@@ -139,3 +139,120 @@ describe("protodelim framing", () => {
     expect(readProtodelim(new Uint8Array([]))).toBeNull();
   });
 });
+
+// ────────────────────────────────────────────────────────────────
+// Cert messages — vectors generated from Go (see ship-3pp.2 commit
+// body for the reproducer). The byte streams are exactly what Go's
+// proto.MarshalOptions{Deterministic: true} writes, so a passing
+// test pins the TS encoder/decoder to the Go wire format.
+// ────────────────────────────────────────────────────────────────
+
+import {
+  decodeCert,
+  decodeCertHandshakeMessage,
+  decodeSignedCertContent,
+  encodeCert,
+  encodeCertHelloMessage,
+  encodeCertProofMessage,
+} from "../src/proto.js";
+
+// All hex literals below come from the Go reproducers in the
+// ship-3pp.2 commit body.
+
+// Cert + SignedCertContent vector (master-signed alice).
+const certHex =
+  "0a590a0a30314a304147454e5431122029acbae141bccaf0b22e1a94d34d0bc7361e526d0bfe12c89794bc9322966dd71a05616c69636520072a060880dacfcf0632060880c1d4de063a0a30314a3053455249414c420464656d6f1240ec0060b9e0e484d4158343cd54b2e8cef017db56cb5bd09cc6dcc41e1a7b2474afceffaea1ef1ba4f7c8eddc478bef2d9ebbd6c39b7faa2076f45a87a1f54e01";
+const contentHex =
+  "0a0a30314a304147454e5431122029acbae141bccaf0b22e1a94d34d0bc7361e526d0bfe12c89794bc9322966dd71a05616c69636520072a060880dacfcf0632060880c1d4de063a0a30314a3053455249414c420464656d6f";
+const signatureHex =
+  "ec0060b9e0e484d4158343cd54b2e8cef017db56cb5bd09cc6dcc41e1a7b2474afceffaea1ef1ba4f7c8eddc478bef2d9ebbd6c39b7faa2076f45a87a1f54e01";
+const agentPubHex =
+  "29acbae141bccaf0b22e1a94d34d0bc7361e526d0bfe12c89794bc9322966dd7";
+
+// Hello + Proof handshake message vectors.
+const helloMsgHex =
+  "0ac2010a9d010a590a0a30314a304147454e5431122029acbae141bccaf0b22e1a94d34d0bc7361e526d0bfe12c89794bc9322966dd71a05616c69636520072a060880dacfcf0632060880c1d4de063a0a30314a3053455249414c420464656d6f1240ec0060b9e0e484d4158343cd54b2e8cef017db56cb5bd09cc6dcc41e1a7b2474afceffaea1ef1ba4f7c8eddc478bef2d9ebbd6c39b7faa2076f45a87a1f54e011220303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f";
+const proofMsgHex =
+  "12420a40404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f";
+
+describe("Cert encode / decode", () => {
+  test("decodeCert recovers content + signature from the Go-produced frame", () => {
+    const cert = decodeCert(fromHex(certHex));
+    expect(toHex(cert.content)).toBe(contentHex);
+    expect(toHex(cert.signature)).toBe(signatureHex);
+  });
+
+  test("encodeCert round-trips bytes-exact with the Go form", () => {
+    const cert = decodeCert(fromHex(certHex));
+    expect(toHex(encodeCert(cert))).toBe(certHex);
+  });
+});
+
+describe("SignedCertContent decode", () => {
+  test("recovers every field from the Go-produced content bytes", () => {
+    const scc = decodeSignedCertContent(fromHex(contentHex));
+    expect(scc.agentId).toBe("01J0AGENT1");
+    expect(toHex(scc.peerPubkey)).toBe(agentPubHex);
+    expect(scc.label).toBe("alice");
+    expect(scc.capsBits).toBe(0b111);
+    expect(scc.serial).toBe("01J0SERIAL");
+    expect(scc.workspaceId).toBe("demo");
+    // 2026-05-01T00:00:00Z = 1777593600 unix seconds.
+    expect(scc.notBefore.seconds).toBe(1777593600n);
+    expect(scc.notBefore.nanos).toBe(0);
+    // 2027-05-01T00:00:00Z = 1809129600 unix seconds.
+    expect(scc.notAfter.seconds).toBe(1809129600n);
+    expect(scc.notAfter.nanos).toBe(0);
+  });
+});
+
+describe("CertHandshakeMessage decode", () => {
+  test("recovers a hello variant including the embedded cert", () => {
+    const msg = decodeCertHandshakeMessage(fromHex(helloMsgHex));
+    expect(msg.hello).toBeDefined();
+    expect(msg.proof).toBeUndefined();
+    expect(toHex(msg.hello!.cert.content)).toBe(contentHex);
+    expect(toHex(msg.hello!.cert.signature)).toBe(signatureHex);
+    // Nonce is the 0x30..0x4f range from the Go vector.
+    expect(msg.hello!.nonce).toHaveLength(32);
+    expect(msg.hello!.nonce[0]).toBe(0x30);
+    expect(msg.hello!.nonce[31]).toBe(0x4f);
+  });
+
+  test("recovers a proof variant", () => {
+    const msg = decodeCertHandshakeMessage(fromHex(proofMsgHex));
+    expect(msg.proof).toBeDefined();
+    expect(msg.hello).toBeUndefined();
+    expect(msg.proof!.signature).toHaveLength(64);
+    expect(msg.proof!.signature[0]).toBe(0x40);
+    expect(msg.proof!.signature[63]).toBe(0x7f);
+  });
+});
+
+describe("CertHandshakeMessage encode", () => {
+  test("encodeCertHelloMessage matches Go's deterministic output byte-exact", () => {
+    const cert = decodeCert(fromHex(certHex));
+    // Use the same nonce the Go reproducer used: 0x30..0x4f.
+    const nonce = new Uint8Array(32);
+    for (let i = 0; i < 32; i++) nonce[i] = 0x30 + i;
+    expect(toHex(encodeCertHelloMessage({ cert, nonce }))).toBe(helloMsgHex);
+  });
+
+  test("encodeCertProofMessage matches Go's deterministic output byte-exact", () => {
+    const signature = new Uint8Array(64);
+    for (let i = 0; i < 64; i++) signature[i] = 0x40 + i;
+    expect(toHex(encodeCertProofMessage({ signature }))).toBe(proofMsgHex);
+  });
+});
+
+function fromHex(s: string): Uint8Array {
+  const out = new Uint8Array(s.length / 2);
+  for (let i = 0; i < out.length; i++) {
+    out[i] = parseInt(s.slice(i * 2, i * 2 + 2), 16);
+  }
+  return out;
+}
+
+function toHex(b: Uint8Array): string {
+  return Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("");
+}
