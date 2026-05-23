@@ -4,7 +4,9 @@
     "ship-3pp.1",
     "ship-3pp.2"
   ],
-  "blocks": [],
+  "blocks": [
+    "ship-3pp.4"
+  ],
   "created": "2026-05-23T15:22:00Z",
   "description": "Port cert.Verify (in cert/cert.go) to TypeScript. New module clients/typescript/src/cert.ts.\n\nVerification steps (must match Go semantics exactly — the Go test suite in cert/cert_test.go and cert/revocation_test.go is the cross-language contract):\n\n1. Ed25519.verify(masterPub, Cert.content, Cert.signature). Fail = ErrUnauthorized.\n2. Decode SignedCertContent from Cert.content.\n3. Check workspace_id == expected. Mismatch = reject (defense in depth, see cert.proto comments).\n4. Check now is in [not_before, not_after]. Outside = reject. Use the same time source as the rest of the client (caller-injectable for tests).\n5. Check serial NOT in revoked set. Present = reject.\n6. Return a Claim { agent_id, peer_pubkey, label, caps_bits, serial, workspace_id } for the caller to use.\n\nCaps mapping: bit 1 = Owner, 2 = Write, 4 = Resize. Owner implies Write + Resize at the consumer layer (see claimToIdentity in auth/cert.go).\n\nRevocation set: caller passes initial Set\u003cstring\u003e; expose an updateRevoked(set) method for runtime updates. No SIGHUP equivalent in the browser.\n\nDepends on the Ed25519 lib choice (parent epic ship-3pp) and the protobuf decode for SignedCertContent (ship-3pp.2).",
   "id": "ship-3pp.3",
