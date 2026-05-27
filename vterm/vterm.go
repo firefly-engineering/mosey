@@ -121,12 +121,12 @@ func Run(ctx context.Context, opts Options, argv []string) error {
 	}
 
 	sess := &Session{
-		logger:  logger,
-		tr:      opts.Transport,
-		cmd:     cmd,
-		ptyf:    ptmx,
-		mode:    mode,
-		output:  newOutputRing(),
+		logger:        logger,
+		tr:            opts.Transport,
+		cmd:           cmd,
+		ptyf:          ptmx,
+		mode:          mode,
+		output:        newOutputRing(),
 		clients:       map[int64]*sessionClient{},
 		pendingResize: map[string]pendingResize{},
 	}
