@@ -52,6 +52,20 @@ type Session struct {
 	nextID   int64
 	clients  map[int64]*sessionClient
 	writerID int64 // PrimaryObserver writer-seat owner; 0 = vacant
+	// pendingResize stashes the latest Resize the client sent on
+	// /mosey/control BEFORE its /mosey/pty stream landed (or
+	// after it dropped without a replacement). The next addClient
+	// for the same remote applies + clears the entry. Without
+	// this, the initial geometry an attach sends over the
+	// control stream is dropped — control handler runs concurrently
+	// with handlePTY, with no ordering guarantee.
+	pendingResize map[string]pendingResize
+}
+
+// pendingResize records a Resize the session can't apply yet
+// because no sessionClient exists for the originating remote.
+type pendingResize struct {
+	cols, rows uint32
 }
 
 // Options configures [Run]. Transport is required; the rest pick
@@ -113,7 +127,8 @@ func Run(ctx context.Context, opts Options, argv []string) error {
 		ptyf:    ptmx,
 		mode:    mode,
 		output:  newOutputRing(),
-		clients: map[int64]*sessionClient{},
+		clients:       map[int64]*sessionClient{},
+		pendingResize: map[string]pendingResize{},
 	}
 
 	opts.Transport.Handle(api.ProtoPTY, sess.handlePTY)

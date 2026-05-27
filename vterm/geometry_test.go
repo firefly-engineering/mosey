@@ -8,8 +8,11 @@ import (
 
 	"google.golang.org/protobuf/encoding/protodelim"
 
+	"github.com/libp2p/go-libp2p/core/peer"
+
 	"github.com/firefly-engineering/mosey/api"
 	"github.com/firefly-engineering/mosey/auth"
+	libp2pbackend "github.com/firefly-engineering/mosey/transport/libp2p"
 	"github.com/firefly-engineering/mosey/vterm"
 )
 
@@ -137,4 +140,79 @@ func TestGeometry_DepartingClientGrowsPTY(t *testing.T) {
 		time.Sleep(50 * time.Millisecond)
 	}
 	t.Errorf("PTY did not grow back to A's geometry after B left; A tail=%q", a.out.String()[mark:])
+}
+
+// TestGeometry_ResizeBeforePTYAttachIsApplied asserts that a
+// Resize arriving on /mosey/control BEFORE the same peer's
+// /mosey/pty stream lands is cached and applied as soon as the
+// PTY client registers. Without this, attach.Run's natural
+// (open control → send resize → open PTY) sequence races the
+// server's handlePTY goroutine and the cap-bearing initial
+// geometry gets silently dropped.
+func TestGeometry_ResizeBeforePTYAttachIsApplied(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	script := "stty size; trap 'stty size' WINCH; while true; do sleep 0.1; done"
+	target, _, cleanup := newVtermSession(t, ctx, vterm.ModeMultiWrite, []string{"bash", "-c", script}, ownerSecrets)
+	defer cleanup()
+
+	// Build the wrapped backend by hand so we can send the
+	// Resize on /mosey/control FIRST, before any /mosey/pty
+	// attach exists. attach.Run would do this in the right
+	// order but also opens PTY shortly after — we want the
+	// gap explicit here.
+	psk, err := auth.NewMultiPSKAuth([]auth.NamedSecret{{
+		Label: auth.LabelOwner, Secret: testSecret,
+		Caps: auth.Capabilities{Owner: true, Write: true, Resize: true},
+	}})
+	if err != nil {
+		t.Fatalf("client psk: %v", err)
+	}
+	backend, err := libp2pbackend.New(ctx, libp2pbackend.Options{Bootstrap: []peer.AddrInfo{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = backend.Close() }()
+	authed := auth.Wrap(backend, psk)
+
+	ctrl, err := authed.Dial(ctx, target, api.ProtoControl)
+	if err != nil {
+		t.Fatalf("ctrl dial: %v", err)
+	}
+	defer func() { _ = ctrl.Close() }()
+	if _, err := protodelim.MarshalTo(ctrl, &api.ControlMessage{
+		Payload: &api.ControlMessage_Resize{Resize: &api.Resize{Cols: 132, Rows: 50}},
+	}); err != nil {
+		t.Fatalf("send Resize: %v", err)
+	}
+	// Give the server time to receive + cache the resize.
+	time.Sleep(100 * time.Millisecond)
+
+	// NOW open the PTY stream. addClient should drain the cached
+	// pending resize and apply it via TIOCSWINSZ.
+	pty, err := authed.Dial(ctx, target, api.ProtoPTY)
+	if err != nil {
+		t.Fatalf("pty dial: %v", err)
+	}
+	defer func() { _ = pty.Close() }()
+
+	out := &syncBuffer{}
+	go func() {
+		buf := make([]byte, 4096)
+		for {
+			n, err := pty.Read(buf)
+			if n > 0 {
+				_, _ = out.Write(buf[:n])
+			}
+			if err != nil {
+				return
+			}
+		}
+	}()
+
+	if !waitForString(out, "50 132", 5*time.Second) {
+		t.Fatalf("cached resize never applied to PTY; out=%q", out.String())
+	}
 }

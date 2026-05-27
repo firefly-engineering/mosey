@@ -129,20 +129,34 @@ func (c *sessionClient) kick() {
 
 // addClient is the mode-aware admission gate. Returns the new
 // client (registered in s.clients) or nil if the current mode
-// refuses the attach. Holds s.mu for the duration; callers must
-// not hold it.
+// refuses the attach. Holds s.mu for the duration of admission;
+// any PTY syscall (e.g. applying a cached pending resize) runs
+// after the lock drops.
 func (s *Session) addClient(stream transport.Stream) *sessionClient {
 	identity := auth.IdentityOf(stream)
 
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	c, pendingCols, pendingRows := s.addClientLocked(stream, identity)
+	s.mu.Unlock()
+	if c != nil && pendingCols > 0 && pendingRows > 0 {
+		if err := applyPTYSize(s.ptyf, pendingCols, pendingRows); err != nil {
+			s.logger.Warn("apply cached resize on attach", "peer", c.remote, "err", err)
+		}
+	}
+	return c
+}
 
+// addClientLocked is the under-mu portion of addClient. The
+// (cols, rows) return is non-zero when a pending resize for this
+// remote was drained and the caller should run applyPTYSize after
+// releasing the lock.
+func (s *Session) addClientLocked(stream transport.Stream, identity auth.Identity) (*sessionClient, uint32, uint32) {
 	canWrite := identity.CanWrite()
 
 	switch s.mode {
 	case ModeExclusive:
 		if len(s.clients) > 0 {
-			return nil
+			return nil, 0, 0
 		}
 
 	case ModeSupersede:
@@ -171,7 +185,7 @@ func (s *Session) addClient(stream transport.Stream) *sessionClient {
 		// canWrite already mirrors identity.
 
 	default:
-		return nil
+		return nil, 0, 0
 	}
 
 	s.nextID++
@@ -184,11 +198,24 @@ func (s *Session) addClient(stream transport.Stream) *sessionClient {
 		done:     make(chan struct{}),
 		canWrite: canWrite,
 	}
+	// Apply any resize the same remote sent on /mosey/control
+	// before its /mosey/pty stream landed. Drain on attach so a
+	// stale entry doesn't bias a future client that happens to
+	// reuse the remote string.
+	var ptyCols, ptyRows uint32
+	if pending, ok := s.pendingResize[c.remote]; ok {
+		c.cols = pending.cols
+		c.rows = pending.rows
+		delete(s.pendingResize, c.remote)
+	}
 	s.clients[c.id] = c
 	if s.mode == ModePrimaryObserver && canWrite {
 		s.writerID = c.id
 	}
-	return c
+	if c.cols > 0 && c.rows > 0 {
+		ptyCols, ptyRows = s.minGeometryLocked()
+	}
+	return c, ptyCols, ptyRows
 }
 
 // clientByRemoteIDLocked returns the most recently-added client
@@ -214,12 +241,22 @@ func (s *Session) clientByRemoteIDLocked(remote string) *sessionClient {
 // (min across every client with non-zero geometry). Returns the
 // applied PTY size — zero/zero when no clients have reported a
 // geometry yet.
+//
+// If no PTY client exists yet for remote, the resize is cached
+// in pendingResize so the next addClient for the same remote can
+// apply it. Control and PTY streams arrive on independent
+// goroutines with no ordering guarantee — without the cache,
+// an initial attach.Run() resize that lands at the vterm before
+// its bridgeClient goroutine has registered the client gets
+// dropped, and the child stays at the PTY's 80×24 default until
+// a SIGWINCH (terminal wiggle) fires another resize.
 func (s *Session) applyResizeForRemote(remote string, cols, rows uint32) (cols2, rows2 uint32, err error) {
 	s.mu.Lock()
 	c := s.clientByRemoteIDLocked(remote)
 	if c == nil {
+		s.pendingResize[remote] = pendingResize{cols: cols, rows: rows}
 		s.mu.Unlock()
-		return 0, 0, errResizeNoClient
+		return 0, 0, nil
 	}
 	c.cols = cols
 	c.rows = rows
