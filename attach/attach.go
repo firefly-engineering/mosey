@@ -139,6 +139,21 @@ func Run(ctx context.Context, opts Options) error {
 		logger.Info("attached", "target", opts.Target, "protocol", proto, "resume_seq", fromSeq)
 		delay = reconnectInitialDelay
 
+		// Re-send the resize now that the PTY stream is open. The
+		// pre-PTY resize sent above arrives at the vterm before
+		// the sessionClient for this remote exists (it's created
+		// by /mosey/pty attach), so it gets dropped with
+		// "resize: no PTY client for remote". Re-sending here
+		// catches the same geometry against a now-registered
+		// client. Cheap and idempotent.
+		if control != nil {
+			if cols, rows, sizeErr := localTerminalSize(stdin); sizeErr == nil && cols > 0 && rows > 0 {
+				if err := control.SendResize(cols, rows); err != nil {
+					logger.Warn("post-attach resize", "err", err)
+				}
+			}
+		}
+
 		err = pumpStream(ctx, stream, stdin, stdout, &renderedBytes)
 		_ = stream.Close()
 
