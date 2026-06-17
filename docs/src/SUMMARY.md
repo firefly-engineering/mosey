@@ -19,6 +19,7 @@
 # Proposals
 
 - [Wallet authentication](wallet-auth.md)
+- [Wallet auth: implementation plan](wallet-auth-impl.md)
 
 # Project
 
