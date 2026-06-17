@@ -1,0 +1,96 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>mosey wallet-sig spike</title>
+<style>
+  body { font: 14px/1.5 ui-monospace, monospace; max-width: 60rem; margin: 2rem auto; padding: 0 1rem; }
+  pre { background: #f4f4f4; padding: 1rem; white-space: pre-wrap; word-break: break-all; }
+  button { font: inherit; padding: .4rem .8rem; margin-right: .5rem; }
+  h1 { font-size: 1.2rem; }
+</style>
+
+<h1>mosey delegation signing spike</h1>
+<p>
+  Open in a browser with Phantom / Solflare / Backpack installed. This renders the
+  <b>exact</b> canonical delegation text, signs it with <code>signMessage</code>, and
+  prints a JSON blob. Pipe that blob into the Go verifier:
+</p>
+<pre>  pbpaste | go run verify.go      # or save to wallet.json: go run verify.go &lt; wallet.json</pre>
+<p>
+  If the verifier prints <b>PASS … verifies over the raw UTF-8 content</b>, the wallet
+  signs the raw bytes (no envelope) and open question #2 is closed. If it FAILs, the
+  wallet wrapped the bytes (e.g. Solana's <code>\xffsolana offchain</code> framing) and
+  we must match that framing server-side.
+</p>
+
+<button id="connect">1. Connect wallet</button>
+<button id="sign" disabled>2. Sign delegation</button>
+
+<h3>Canonical content (what the wallet should display):</h3>
+<pre id="content">(connect first)</pre>
+<h3>Blob for verify.go:</h3>
+<pre id="out">—</pre>
+
+<script type="module">
+  const ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+  function b58encode(bytes) {
+    let n = 0n;
+    for (const b of bytes) n = n * 256n + BigInt(b);
+    let out = "";
+    while (n > 0n) { out = ALPHABET[Number(n % 58n)] + out; n /= 58n; }
+    for (const b of bytes) { if (b === 0) out = "1" + out; else break; }
+    return out || "1";
+  }
+  function rand(n) { return crypto.getRandomValues(new Uint8Array(n)); }
+  const hex = (buf) => [...buf].map((b) => b.toString(16).padStart(2, "0")).join("");
+
+  // Identical grammar to sign.mjs / verify.go.
+  function render(f) {
+    return [
+      "mosey session authorization v1",
+      "",
+      `session: ${f.session}`,
+      `delegator: ${f.delegator}`,
+      `delegate: ${f.delegate}`,
+      `caps: ${f.caps}`,
+      `not-before: ${f.not_before}`,
+      `not-after: ${f.not_after}`,
+      `nonce: ${f.nonce}`,
+    ].join("\n");
+  }
+
+  const provider = window.phantom?.solana ?? window.solana ?? window.solflare;
+  let fields;
+
+  document.getElementById("connect").onclick = async () => {
+    if (!provider) { alert("No Solana wallet found (Phantom/Solflare/Backpack)."); return; }
+    const resp = await provider.connect();
+    const wallet = (resp?.publicKey ?? provider.publicKey).toString();
+    fields = {
+      session: b58encode(rand(32)),
+      delegator: wallet,            // the wallet IS the delegator
+      delegate: b58encode(rand(32)),
+      caps: "write, resize",
+      not_before: "2026-06-17T14:00:00Z",
+      not_after: "2026-06-18T14:00:00Z",
+      nonce: b58encode(rand(16)),
+    };
+    document.getElementById("content").textContent = render(fields);
+    document.getElementById("sign").disabled = false;
+  };
+
+  document.getElementById("sign").onclick = async () => {
+    const content = render(fields);
+    const encoded = new TextEncoder().encode(content);
+    const res = await provider.signMessage(encoded, "utf8");
+    const sig = res.signature ?? res; // Phantom: {signature, publicKey}
+    const pub = (res.publicKey ?? provider.publicKey).toString();
+    const blob = {
+      fields,
+      content_hex: hex(encoded),
+      pubkey_base58: pub,
+      sig_base58: b58encode(sig),
+    };
+    document.getElementById("out").textContent = JSON.stringify(blob, null, 2);
+    try { await navigator.clipboard.writeText(JSON.stringify(blob)); } catch {}
+  };
+</script>
