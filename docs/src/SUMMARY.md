@@ -16,6 +16,10 @@
 - [Multi-client modes](multi-client.md)
 - [Reattach and replay](reattach.md)
 
+# Proposals
+
+- [Wallet authentication](wallet-auth.md)
+
 # Project
 
 - [Relationship to shepherd](relationship-to-shepherd.md)
