@@ -1,0 +1,44 @@
+{
+  "_comment": "Cross-language fixtures for the canonical delegation text. Go (wallet) and TS (clients/typescript) must both render byte-identical content and verify the signature. Regenerate with: go test ./wallet -run Golden -update",
+  "vectors": [
+    {
+      "name": "owner-all-caps",
+      "session": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+      "delegator": "9hSR6S7WPtxmTojgo6GG3k4yDPecgJY292j7xrsUGWBu",
+      "delegate": "GyGKxMyg1p9SsHfm15MkNUu1u9TN2JtTspcdmrtGUdse",
+      "caps": "write, resize, forge",
+      "not_before": "2026-06-17T14:00:00Z",
+      "not_after": "2026-06-18T14:00:00Z",
+      "nonce_hex": "11111111111111111111111111111111",
+      "signer_seed_hex": "0202020202020202020202020202020202020202020202020202020202020202",
+      "content": "mosey session authorization v1\n\nsession: AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9\ndelegator: 9hSR6S7WPtxmTojgo6GG3k4yDPecgJY292j7xrsUGWBu\ndelegate: GyGKxMyg1p9SsHfm15MkNUu1u9TN2JtTspcdmrtGUdse\ncaps: write, resize, forge\nnot-before: 2026-06-17T14:00:00Z\nnot-after: 2026-06-18T14:00:00Z\nnonce: 37EWfWxhwVEGTT5BcjfE2L",
+      "signature_base58": "TqUn4Y9FA5qFSesbJ1Gqo32qFPZPHfLcAKfSYuh41onmqA3LLPCFhBP6C65K82VyneuhYT6stDrVXLczTSv3aPc"
+    },
+    {
+      "name": "view-only",
+      "session": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+      "delegator": "EdmxWPmx2WH6WgFfTdu9xfkYf3k1g5wD1zccTVySEEh1",
+      "delegate": "8SFqwqnq4whPhs8icwHA2hQg3hUoN1qrCLK1SBx3WKwe",
+      "caps": "view-only",
+      "not_before": "2026-06-17T14:00:00Z",
+      "not_after": "2026-06-18T14:00:00Z",
+      "nonce_hex": "a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0",
+      "signer_seed_hex": "0404040404040404040404040404040404040404040404040404040404040404",
+      "content": "mosey session authorization v1\n\nsession: AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9\ndelegator: EdmxWPmx2WH6WgFfTdu9xfkYf3k1g5wD1zccTVySEEh1\ndelegate: 8SFqwqnq4whPhs8icwHA2hQg3hUoN1qrCLK1SBx3WKwe\ncaps: view-only\nnot-before: 2026-06-17T14:00:00Z\nnot-after: 2026-06-18T14:00:00Z\nnonce: LqRpC6dQfagZt49fWGy7Zy",
+      "signature_base58": "44wTxp51UgVmcS9Woh26djWXCUHWv355VipBJXEb7PsLpkpqikNwJneg9T94hQW53KgfGaQEKeZfN9jAtDhQL7w5"
+    },
+    {
+      "name": "write-only",
+      "session": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+      "delegator": "AKkzLhjhyFtM9j7WAhbaqYpFe49cXeJBg2kzLRC2PnNa",
+      "delegate": "GmaDrppBC7P5ARKV8g3djiwP89vz1jLK23V2GBjuAEGB",
+      "caps": "write",
+      "not_before": "2026-06-17T14:00:00Z",
+      "not_after": "2026-06-18T14:00:00Z",
+      "nonce_hex": "5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c",
+      "signer_seed_hex": "0606060606060606060606060606060606060606060606060606060606060606",
+      "content": "mosey session authorization v1\n\nsession: AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9\ndelegator: AKkzLhjhyFtM9j7WAhbaqYpFe49cXeJBg2kzLRC2PnNa\ndelegate: GmaDrppBC7P5ARKV8g3djiwP89vz1jLK23V2GBjuAEGB\ncaps: write\nnot-before: 2026-06-17T14:00:00Z\nnot-after: 2026-06-18T14:00:00Z\nnonce: CQVmY2naudmW4Frw3LLDUf",
+      "signature_base58": "4uixrJ4wincU2Euz3h1oMcw3DB4CUfNKVgUnm6jDwepiPEFWm6TrtDrn18xvF5ors9Zz54oQXCsomBZyoPoHXj6L"
+    }
+  ]
+}
