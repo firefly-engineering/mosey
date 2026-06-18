@@ -17,6 +17,11 @@
 //	  Workspace-master + cert minting (mint-master, mint-agent,
 //	  revoke). Lives in this binary because every host that runs
 //	  launch / attach already has it.
+//
+//	mosey session SUBCMD ...
+//	  On-chain wallet-auth ops against the mosey-session program
+//	  (register, transfer, bump-epoch, grant). Owner-signed Solana
+//	  transactions; the off-chain `grant` is separate.
 package main
 
 import (
@@ -40,6 +45,8 @@ func main() {
 		os.Exit(runCert(os.Args[2:], os.Stdout, os.Stderr))
 	case "grant":
 		os.Exit(runGrant(os.Args[2:], os.Stdout, os.Stderr))
+	case "session":
+		os.Exit(runSession(os.Args[2:], os.Stdout, os.Stderr))
 	case "wallet":
 		os.Exit(runWallet(os.Args[2:], os.Stdout, os.Stderr))
 	case "-h", "--help", "help":
@@ -61,6 +68,7 @@ Usage:
   mosey control SUBCMD [flags] ENDPOINT ...     admin ops (list-clients, promote, kick, demote, set-mode)
   mosey cert    SUBCMD [flags] ...              workspace master + cert minting
   mosey grant   [flags]                         sign an off-chain wallet-auth delegation
+  mosey session SUBCMD [flags]                   on-chain session ops (register, transfer, bump-epoch, grant)
   mosey wallet  SUBCMD [flags]                   browser-wallet ops (sign: approve a grant via Phantom)
 
 Run "mosey SUBCMD -h" for subcommand-specific flags.`)
