@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
+	"sync"
 	"time"
 
 	"google.golang.org/protobuf/encoding/protodelim"
@@ -42,9 +44,10 @@ type WalletAuth struct {
 	now func() time.Time
 
 	// Server role.
-	sessionPriv ed25519.PrivateKey
-	sessionID   ed25519.PublicKey
-	source      wallet.SnapshotSource
+	sessionPriv   ed25519.PrivateKey
+	sessionID     ed25519.PublicKey
+	source        wallet.SnapshotSource
+	verifyLimiter *rateLimiter // bounds on-demand VerifyNow RPC; nil = unlimited
 
 	// Client role.
 	connPriv      ed25519.PrivateKey
@@ -60,6 +63,13 @@ type ServerOptions struct {
 	SessionKey ed25519.PrivateKey
 	// Source resolves on-chain ownership and grants. Required.
 	Source wallet.SnapshotSource
+	// VerifyRatePerSec caps how often a cache miss triggers a blocking
+	// on-demand VerifyNow RPC (a token bucket of VerifyBurst). 0 uses a
+	// sane default; negative disables the limit. Optional.
+	VerifyRatePerSec float64
+	// VerifyBurst is the on-demand-verify token-bucket size. 0 uses a
+	// sane default. Optional.
+	VerifyBurst int
 	// Now overrides the clock (tests). Optional.
 	Now func() time.Time
 }
@@ -88,12 +98,54 @@ func NewWalletServerAuth(opts ServerOptions) (*WalletAuth, error) {
 	if opts.Source == nil {
 		return nil, errors.New(errPrefixWallet + "Source required")
 	}
+	now := clockOr(opts.Now)
+	var limiter *rateLimiter
+	if opts.VerifyRatePerSec >= 0 { // negative disables the limit
+		perSec := opts.VerifyRatePerSec
+		if perSec == 0 {
+			perSec = 5
+		}
+		burst := opts.VerifyBurst
+		if burst == 0 {
+			burst = 10
+		}
+		limiter = newRateLimiter(perSec, burst, now())
+	}
 	return &WalletAuth{
-		now:         clockOr(opts.Now),
-		sessionPriv: opts.SessionKey,
-		sessionID:   opts.SessionKey.Public().(ed25519.PublicKey),
-		source:      opts.Source,
+		now:           now,
+		sessionPriv:   opts.SessionKey,
+		sessionID:     opts.SessionKey.Public().(ed25519.PublicKey),
+		source:        opts.Source,
+		verifyLimiter: limiter,
 	}, nil
+}
+
+// rateLimiter is a simple token bucket used to bound on-demand
+// VerifyNow RPC across all peers.
+type rateLimiter struct {
+	mu     sync.Mutex
+	tokens float64
+	max    float64
+	perSec float64
+	last   time.Time
+}
+
+func newRateLimiter(perSec float64, burst int, now time.Time) *rateLimiter {
+	return &rateLimiter{tokens: float64(burst), max: float64(burst), perSec: perSec, last: now}
+}
+
+func (l *rateLimiter) allow(now time.Time) bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if elapsed := now.Sub(l.last).Seconds(); elapsed > 0 {
+		l.tokens = math.Min(l.max, l.tokens+elapsed*l.perSec)
+		l.last = now
+	}
+	if l.tokens >= 1 {
+		l.tokens--
+		return true
+	}
+	return false
 }
 
 // NewWalletClientAuth builds the dialer side.
@@ -279,7 +331,7 @@ func (w *WalletAuth) resolveCaps(ctx context.Context, chain []wallet.Delegation,
 	// On a cache miss for the root, consult the source authoritatively
 	// once before rejecting — admits a freshly-granted wallet without
 	// waiting for the next refresh.
-	if errors.Is(ferr, wallet.ErrUnknownRoot) {
+	if errors.Is(ferr, wallet.ErrUnknownRoot) && (w.verifyLimiter == nil || w.verifyLimiter.allow(w.now())) {
 		if gc, ok, verr := w.source.VerifyNow(ctx, root); verr == nil && ok {
 			caps, isOwner, ferr = wallet.Fold(chain, connPub, w.sessionID, overlaySnapshot{Snapshot: snap, root: root, caps: gc}, w.now())
 			if ferr == nil {

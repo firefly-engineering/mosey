@@ -222,6 +222,39 @@ func TestWalletHandshakeOnDemandVerify(t *testing.T) {
 	}
 }
 
+func TestWalletHandshakeOnDemandVerifyRateLimited(t *testing.T) {
+	// With a burst of 1 and a frozen clock, the first cache-miss
+	// handshake gets an on-demand verify; the second is rate-limited and
+	// must be rejected even though the wallet has a real grant.
+	session := walletKey(t, 1)
+	sessionID := walletPub(session)
+	owner := walletKey(t, 2)
+	viewer := walletKey(t, 3)
+	src := onDemandSource{owner: walletPub(owner), wallet: walletPub(viewer), caps: wallet.CapWrite}
+
+	server, err := NewWalletServerAuth(ServerOptions{
+		SessionKey: session, Source: src, Now: walletNow,
+		VerifyRatePerSec: 0.0001, VerifyBurst: 1, // ~no refill at the frozen clock
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	attach := func(seed byte) (Identity, error) {
+		kc := walletKey(t, seed)
+		chain := []wallet.Delegation{deleg(viewer, sessionID, walletPub(kc), wallet.CapWrite)}
+		id, _, srvErr, _ := handshake(server, newClient(t, kc, chain, sessionID))
+		return id, srvErr
+	}
+
+	if _, err := attach(50); err != nil {
+		t.Fatalf("first on-demand verify should pass: %v", err)
+	}
+	if _, err := attach(51); err == nil {
+		t.Error("second on-demand verify should be rate-limited and rejected")
+	}
+}
+
 // staleSource is always stale, exercising fail-closed.
 type staleSource struct{ owner ed25519.PublicKey }
 
