@@ -453,3 +453,122 @@ function decodeSignedNonce(buf: Uint8Array): SignedNonce {
   }
   return { signature };
 }
+
+// ────────────────────────────────────────────────────────────────
+// Wallet handshake messages (api/wallet.proto). Carried on
+// /mosey/auth/ as length-delimited WalletHandshakeMessage envelopes
+// when the wallet authenticator is in use.
+// ────────────────────────────────────────────────────────────────
+
+export interface Delegation {
+  content: Uint8Array;
+  signature: Uint8Array;
+}
+
+export interface WalletHello {
+  clientPubkey: Uint8Array;
+  nonceC: Uint8Array;
+  delegationChain: Delegation[];
+}
+
+export interface WalletChallenge {
+  sessionKey: Uint8Array;
+  nonceS: Uint8Array;
+  serverSig: Uint8Array;
+}
+
+export interface WalletProof {
+  clientSig: Uint8Array;
+}
+
+export function encodeDelegation(d: Delegation): Uint8Array {
+  return concat([encodeBytesField(1, d.content), encodeBytesField(2, d.signature)]);
+}
+
+function decodeDelegation(buf: Uint8Array): Delegation {
+  let content: Uint8Array = new Uint8Array(0);
+  let signature: Uint8Array = new Uint8Array(0);
+  for (const { field, value } of iterFields(buf)) {
+    if (field === 1) content = value as Uint8Array;
+    else if (field === 2) signature = value as Uint8Array;
+  }
+  return { content, signature };
+}
+
+// encodeWalletHelloMessage wraps a WalletHello as a
+// WalletHandshakeMessage with the `hello` oneof variant (field 1).
+// Result is the inner body — pass through withProtodelim() to frame.
+export function encodeWalletHelloMessage(h: WalletHello): Uint8Array {
+  const parts: Uint8Array[] = [
+    encodeBytesField(1, h.clientPubkey),
+    encodeBytesField(2, h.nonceC),
+  ];
+  for (const d of h.delegationChain) {
+    parts.push(encodeBytesField(3, encodeDelegation(d)));
+  }
+  return encodeBytesField(1, concat(parts));
+}
+
+// encodeWalletChallengeMessage wraps a WalletChallenge as the
+// `challenge` oneof variant (field 2). The client only decodes
+// challenges from the server; this exists for symmetry and tests.
+export function encodeWalletChallengeMessage(c: WalletChallenge): Uint8Array {
+  const inner = concat([
+    encodeBytesField(1, c.sessionKey),
+    encodeBytesField(2, c.nonceS),
+    encodeBytesField(3, c.serverSig),
+  ]);
+  return encodeBytesField(2, inner);
+}
+
+// encodeWalletProofMessage wraps a WalletProof as the `proof` oneof
+// variant (field 3).
+export function encodeWalletProofMessage(p: WalletProof): Uint8Array {
+  return encodeBytesField(3, encodeBytesField(1, p.clientSig));
+}
+
+export function decodeWalletHandshakeMessage(buf: Uint8Array): {
+  hello?: WalletHello;
+  challenge?: WalletChallenge;
+  proof?: WalletProof;
+} {
+  const out: { hello?: WalletHello; challenge?: WalletChallenge; proof?: WalletProof } = {};
+  for (const { field, value } of iterFields(buf)) {
+    if (field === 1) out.hello = decodeWalletHello(value as Uint8Array);
+    else if (field === 2) out.challenge = decodeWalletChallenge(value as Uint8Array);
+    else if (field === 3) out.proof = decodeWalletProof(value as Uint8Array);
+  }
+  return out;
+}
+
+function decodeWalletHello(buf: Uint8Array): WalletHello {
+  let clientPubkey: Uint8Array = new Uint8Array(0);
+  let nonceC: Uint8Array = new Uint8Array(0);
+  const delegationChain: Delegation[] = [];
+  for (const { field, value } of iterFields(buf)) {
+    if (field === 1) clientPubkey = value as Uint8Array;
+    else if (field === 2) nonceC = value as Uint8Array;
+    else if (field === 3) delegationChain.push(decodeDelegation(value as Uint8Array));
+  }
+  return { clientPubkey, nonceC, delegationChain };
+}
+
+function decodeWalletChallenge(buf: Uint8Array): WalletChallenge {
+  let sessionKey: Uint8Array = new Uint8Array(0);
+  let nonceS: Uint8Array = new Uint8Array(0);
+  let serverSig: Uint8Array = new Uint8Array(0);
+  for (const { field, value } of iterFields(buf)) {
+    if (field === 1) sessionKey = value as Uint8Array;
+    else if (field === 2) nonceS = value as Uint8Array;
+    else if (field === 3) serverSig = value as Uint8Array;
+  }
+  return { sessionKey, nonceS, serverSig };
+}
+
+function decodeWalletProof(buf: Uint8Array): WalletProof {
+  let clientSig: Uint8Array = new Uint8Array(0);
+  for (const { field, value } of iterFields(buf)) {
+    if (field === 1) clientSig = value as Uint8Array;
+  }
+  return { clientSig };
+}

@@ -1,0 +1,66 @@
+// mosey wallet-auth handshake + delegation wire formats. Carried on
+// /mosey/auth/1.0.0 as length-delimited [WalletHandshakeMessage]
+// envelopes when the wallet authenticator is in use.
+//
+// Mutual but asymmetric: the server proves control of the on-chain
+// session identity (session_key); the client proves control of an
+// ephemeral connection key (K_c) and presents a delegation chain that
+// roots that key's capabilities in on-chain ownership or a grant.
+//
+//   1. Client → Server: WalletHello { client_pubkey, nonce_c, delegation_chain }
+//   2. Server → Client: WalletChallenge { session_key, nonce_s, server_sig }
+//   3. Client → Server: WalletProof { client_sig }
+//
+//   server_sig = Ed25519(session_key, "mosey-wallet-v1:server" || nonce_c || nonce_s || session_id)
+//   client_sig = Ed25519(K_c,         "mosey-wallet-v1:client" || nonce_s || nonce_c || session_id)
+//
+// session_id is the session_key's bytes; the client checks the server's
+// session_key equals the session it dialed (mutual auth, so a MITM
+// cannot impersonate the session). Direction-specific labels stop a
+// signature being replayed the other way.
+syntax = "proto3";
+
+package mosey.v1;
+
+option go_package = "github.com/firefly-engineering/mosey/api;api";
+
+message WalletHandshakeMessage {
+  oneof kind {
+    WalletHello hello = 1;
+    WalletChallenge challenge = 2;
+    WalletProof proof = 3;
+  }
+}
+
+// WalletHello is the dialer's opener: the ephemeral connection key it
+// will prove control of, a 32-byte nonce, and the delegation chain
+// (root → leaf) that authorizes that key. The chain's leaf delegate
+// must equal client_pubkey.
+message WalletHello {
+  bytes client_pubkey = 1;
+  bytes nonce_c = 2;
+  repeated Delegation delegation_chain = 3;
+}
+
+// WalletChallenge is the listener's response: the on-chain session
+// identity, its own 32-byte nonce, and a signature by session_key over
+// the transcript proving it controls the session.
+message WalletChallenge {
+  bytes session_key = 1;
+  bytes nonce_s = 2;
+  bytes server_sig = 3;
+}
+
+// WalletProof is the dialer's closing proof: client_pubkey's signature
+// over the transcript, proving live control of the connection key.
+message WalletProof {
+  bytes client_sig = 1;
+}
+
+// Delegation is the off-chain capability envelope: the canonical content
+// text (see wallet.Fields) plus the delegator's Ed25519 signature over
+// it. The delegator is named inside content.
+message Delegation {
+  bytes content = 1;
+  bytes signature = 2;
+}

@@ -108,7 +108,8 @@ proto:
         --go_out=. --go_opt=module=github.com/firefly-engineering/mosey \
         api/auth.proto \
         api/cert.proto \
-        api/control.proto
+        api/control.proto \
+        api/wallet.proto
 
 # Verify the committed *.pb.go matches what protoc would regenerate.
 # Catches drift between .proto sources and checked-in Go in CI.
@@ -121,8 +122,8 @@ proto-check:
     cp api/*.proto "$tmp/api/"
     (cd "$tmp" && protoc \
         --go_out=. --go_opt=module=github.com/firefly-engineering/mosey \
-        api/auth.proto api/cert.proto api/control.proto)
-    for f in auth.pb.go cert.pb.go control.pb.go; do
+        api/auth.proto api/cert.proto api/control.proto api/wallet.proto)
+    for f in auth.pb.go cert.pb.go control.pb.go wallet.pb.go; do
         diff -u "$tmp/api/$f" "api/$f"
     done
 
