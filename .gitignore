@@ -9,3 +9,7 @@ result-*
 
 # mdbook output (`just docs-build`)
 /docs/book/
+
+# Local devnet secrets / config (never commit keypairs)
+.env.local
+/.devnet/
