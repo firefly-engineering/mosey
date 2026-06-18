@@ -307,8 +307,9 @@ func openBrowser(url string) error {
 }
 
 // signPageHTML is the minimal loopback signing page. It reads the state
-// from the URL, connects Phantom, asks the server to render the
-// canonical content, signs the raw bytes, and posts the signature back.
+// from the URL, lets the user pick an installed wallet (Phantom / Solflare
+// / Backpack), asks the server to render the canonical content, signs the
+// raw bytes, and posts the signature back.
 const signPageHTML = `<!doctype html>
 <meta charset="utf-8" />
 <title>mosey · approve session grant</title>
@@ -320,7 +321,7 @@ const signPageHTML = `<!doctype html>
 </style>
 <h1>mosey · approve session grant</h1>
 <p id="status">Connect your wallet to review and sign the delegation.</p>
-<button id="go">Connect &amp; sign</button>
+<div id="wallets">Detecting wallets…</div>
 <h3>Delegation</h3>
 <pre id="content">—</pre>
 <script type="module">
@@ -338,10 +339,25 @@ const signPageHTML = `<!doctype html>
   const status = document.getElementById("status");
   const set = (msg, cls) => { status.textContent = msg; status.className = cls || ""; };
 
-  document.getElementById("go").onclick = async () => {
+  // Detect each wallet by its own injected global, not window.solana
+  // (only one wallet can own that), so the user can pick which one signs.
+  function detect() {
+    const out = [], seen = new Set();
+    const add = (name, p) => { if (p && !seen.has(p)) { seen.add(p); out.push({ name, p }); } };
+    add("Phantom", window.phantom?.solana);
+    add("Solflare", window.solflare);
+    add("Backpack", window.backpack?.solana ?? (window.backpack?.isBackpack ? window.backpack : null));
+    const ws = window.solana;
+    if (ws && !seen.has(ws)) {
+      const who = ws.isPhantom ? "Phantom" : ws.isSolflare ? "Solflare" : ws.isBackpack ? "Backpack" : "unknown";
+      add(who + " (window.solana)", ws);
+    }
+    return out;
+  }
+
+  async function sign(provider) {
     try {
-      const provider = window.phantom?.solana ?? window.solana;
-      if (!provider) { set("No Phantom wallet found.", "err"); return; }
+      set("Connecting…");
       const resp = await provider.connect();
       const walletAddr = (resp?.publicKey ?? provider.publicKey).toString();
 
@@ -359,6 +375,23 @@ const signPageHTML = `<!doctype html>
     } catch (e) {
       set("error: " + (e?.message ?? e), "err");
     }
-  };
+  }
+
+  function renderWallets() {
+    const box = document.getElementById("wallets");
+    const found = detect();
+    box.innerHTML = "";
+    if (!found.length) { box.textContent = "No Solana wallet found (Phantom / Solflare / Backpack)."; box.className = "err"; return; }
+    for (const { name, p } of found) {
+      const btn = document.createElement("button");
+      btn.textContent = name;
+      btn.onclick = () => sign(p);
+      box.appendChild(btn);
+    }
+  }
+
+  // Extensions inject asynchronously; scan now and again shortly after load.
+  renderWallets();
+  setTimeout(renderWallets, 600);
 </script>
 `
