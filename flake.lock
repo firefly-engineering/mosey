@@ -566,11 +566,11 @@
         "teller": "teller"
       },
       "locked": {
-        "lastModified": 1779043278,
-        "narHash": "sha256-3+L1qPnOTUdExcDCCyRexM1KBF5OKixeeTlZe5+I1TE=",
+        "lastModified": 1781772052,
+        "narHash": "sha256-md4A+PapbJwzGoD/gDn/kvi88iYtJMM0hSLIGfsd8Tk=",
         "owner": "firefly-engineering",
         "repo": "toolbox",
-        "rev": "fa18b7a4791c3bd7d8f20a938973272aea9b8f6f",
+        "rev": "566e03e2f009b7fd4c60570d8aa1697c56e18d07",
         "type": "github"
       },
       "original": {

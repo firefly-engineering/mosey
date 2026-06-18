@@ -288,11 +288,11 @@ workspace, not by design:
   `mosey wallet sign` are ready for the manual pass.
 - **`accountSubscribe` push refresh** — the poll backstop (the
   correctness floor) is implemented; WS push is a latency optimization.
-- **Nix flake** — `solana-cli` + `anchor` are in the dev shell and
-  `just anchor-build` builds the program **offline**: platform-tools
-  v1.54 is pinned as a fixed-output derivation, mounted into a complete
-  SBF SDK, and used via `--skip-tools-install` (no build-time download,
-  verified on `aarch64-darwin`). Remaining: fill the platform-tools
-  hashes for the other three systems and move the whole thing into the
-  toolbox; consider a `.#onchain` shell to keep the ~300 MiB off the
-  default shell. Kept out of `just check`.
+- **Nix flake** — the dev shell pulls the toolbox `solana-toolchain`
+  (solana-cli + anchor + a wrapped, host-independent `cargo-build-sbf`);
+  `just anchor-build` builds the program **offline** with no host rustup
+  (platform-tools v1.54 pinned as a fixed-output derivation for all four
+  systems, isolated `RUSTUP_HOME`, `--skip-tools-install`; verified on
+  `aarch64-darwin`). Remaining: verify the Linux autopatchelf path and
+  consider a `.#onchain` shell to keep the ~300 MiB off the default
+  shell. Kept out of `just check`.

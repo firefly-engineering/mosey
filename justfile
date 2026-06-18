@@ -131,37 +131,13 @@ proto-check:
 # On-chain program (wallet auth, Track B)
 # ──────────────────────────────────────────────────────────────────────
 
-# platform-tools version with a Rust new enough for the program's
-# edition2024 deps. nixpkgs solana-cli's default (v1.51 / Rust 1.84) is
-# one release too old; v1.54 ships Rust 1.89.
-sbf-tools-version := "v1.54"
-
 # Build the mosey-session Anchor program (target/deploy/mosey_session.so).
-# Run from the dev shell. When MOSEY_SBF_SDK is exported (the flake's
-# pinned, offline SBF SDK), the build uses it with --skip-tools-install
-# and never downloads. Otherwise it falls back to a writable copy of the
-# nixpkgs SDK plus a one-time platform-tools fetch (systems without a
-# pinned hash yet). Not in `just check`.
+# Run from the dev shell: the toolbox solana-toolchain provides a wrapped
+# cargo-build-sbf that handles the pinned offline SBF SDK, an isolated
+# RUSTUP_HOME, and the platform-tools toolchain — no download, no host
+# rustup. Not in `just check`.
 anchor-build:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    cd programs/mosey-session
-    if [ -n "${MOSEY_SBF_SDK:-}" ]; then
-        echo "using pinned SBF SDK: $MOSEY_SBF_SDK (offline)"
-        SBF_SDK_PATH="$MOSEY_SBF_SDK" \
-            cargo build-sbf --skip-tools-install --tools-version {{sbf-tools-version}}
-    else
-        echo "no pinned SBF SDK; using writable copy + platform-tools fetch"
-        cache="${XDG_CACHE_HOME:-$HOME/.cache}/mosey-sbf"
-        pkgbin="$(dirname "$(command -v cargo-build-sbf)")"
-        if [ ! -d "$cache/platform-tools-sdk" ]; then
-            mkdir -p "$cache"
-            cp -R "$pkgbin/platform-tools-sdk" "$cache/"
-            chmod -R u+w "$cache"
-        fi
-        SBF_SDK_PATH="$cache/platform-tools-sdk/sbf" \
-            cargo build-sbf --tools-version {{sbf-tools-version}}
-    fi
+    cd programs/mosey-session && cargo-build-sbf
 
 # ──────────────────────────────────────────────────────────────────────
 # TypeScript reference client (clients/typescript/)

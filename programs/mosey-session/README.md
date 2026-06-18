@@ -11,27 +11,23 @@ snapshot cache follows.
 
 ## Status & toolchain
 
-The dev shell provides `solana-cli` + `anchor` (from nixpkgs). Build the
-deployable `.so` with:
+The dev shell provides the toolbox `solana-toolchain` (solana-cli +
+anchor + a host-independent `cargo-build-sbf`). Build the deployable
+`.so` with:
 
 ```sh
 just anchor-build                 # → target/deploy/mosey_session.so
 ```
 
-The build is **offline / pinned** (verified on `aarch64-darwin`): the
-flake fetches platform-tools v1.54 as a fixed-output derivation, mounts
-it into a complete SBF SDK, and exports `MOSEY_SBF_SDK`. `just
-anchor-build` uses it with `--skip-tools-install`, so nothing is
-downloaded at build time. This sidesteps two nixpkgs frictions: the
-SBF SDK ships read-only in the store (so `cargo-build-sbf` can't install
-platform-tools next to it), and the default platform-tools (v1.51 /
-Rust 1.84) predate the program's `edition2024` deps (v1.54 ships Rust
-1.89).
-
-The platform-tools hash is pinned per system in `flake.nix`; only
-`aarch64-darwin` is filled today (others are a TODO for the toolbox
-move). On a system without a pinned hash, the recipe falls back to a
-writable copy + a one-time platform-tools fetch.
+The build is **offline and host-independent** (verified on
+`aarch64-darwin`): the toolchain pins platform-tools v1.54 as a
+fixed-output derivation, mounts it into a complete SBF SDK, runs against
+an isolated `RUSTUP_HOME` with the platform-tools rust as the rustup
+default, and passes `--skip-tools-install`. So nothing is downloaded at
+build time and the host's `rustup` is never touched. (This sidesteps
+nixpkgs shipping the SBF SDK read-only and its default platform-tools
+predating the program's `edition2024` deps.) See
+`toolbox//packages/solana-toolchain`.
 
 (`cargo-build-sbf` logs a benign `ln: ... 'criterion': Permission
 denied` — it tries to drop a bench symlink into the read-only SDK; the
