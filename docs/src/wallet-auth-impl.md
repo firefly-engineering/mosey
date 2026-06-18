@@ -263,7 +263,7 @@ Built and tested in this repo (Go `go test ./...`, TS `vitest`, Rust
 | A4 | `walletflags`, launch/attach wiring, session keypair | unit + **e2e through `auth.Wrap` over unix + websocket** |
 | A5 (client) | `runWalletHandshake`, `WalletAuthConfig`, `Stream.whenClosed` | **TS e2e against a live `mosey launch`** (happy + reject) |
 | A5 (loopback) | `mosey wallet sign` 127.0.0.1 authorizer + Phantom SPA | handler tests w/ in-process signer; **live Phantom is manual** |
-| B1 | `programs/mosey-session` Anchor program | `cargo check` (host) + **`just anchor-build` produces the `.so`** under nixpkgs solana-cli/anchor |
+| B1 | `programs/mosey-session` Anchor program | `cargo check` (host) + **`just anchor-build` produces the `.so`** under the toolbox `solana-toolchain` + **deployed to devnet** (`D64mDEWvdThvEXMaxpeLRAP94wst2WcMiyzb3VqZ23T7`) |
 | B2 | `walletsolana` Solana `SnapshotSource` | unit w/ fake RPC caller |
 | B3 (off-chain) | `mosey grant` (bearer + `--to`) | **e2e: grant → attach** |
 | C | strict-parser fuzz; 8-hop depth cap; owner/admin scoping fix | fuzz (8.5M execs) + unit |
@@ -271,13 +271,16 @@ Built and tested in this repo (Go `go test ./...`, TS `vitest`, Rust
 Deferred — each blocked only by infrastructure absent from this
 workspace, not by design:
 
-- **B1 deploy + `anchor test`** — the program now **builds** under the
-  Nix dev shell (`just anchor-build` → `.so`, verified). Deploying
-  (`solana program deploy`) needs a funded keypair; `anchor test` needs
-  a running validator. Deploy then sets the real `declare_id!` /
-  canonical `--program`.
-- **B2 live verification** — needs the program deployed to devnet; the
-  decode/liveness/budget logic is already unit-tested.
+- **B1 deploy** — **done.** Built under the Nix dev shell
+  (`just anchor-build` → `.so`, `--arch v3` since enabling SBPFv3 raised
+  the clusters' minimum deploy version) and **deployed to devnet** as
+  `D64mDEWvdThvEXMaxpeLRAP94wst2WcMiyzb3VqZ23T7` (authority
+  `HAAd3Q…gxhX`); `declare_id!` now pins that address. `anchor test`
+  against a local validator remains the one untouched piece (needs a
+  running validator in CI).
+- **B2 live verification** — now unblocked (program is on devnet); the
+  decode/liveness/budget logic is already unit-tested. Needs a live
+  Session/Grant account to read against (created via B3 on-chain writes).
 - **B3 on-chain writes** (`mosey session register/transfer/bump-epoch`,
   `grant --onchain`) — transaction construction + submission needs a
   Solana SDK and a deployed program to build against. The off-chain
