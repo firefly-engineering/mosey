@@ -9,6 +9,7 @@
 package walletflags
 
 import (
+	"context"
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/hex"
@@ -18,22 +19,38 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/firefly-engineering/mosey/auth"
 	"github.com/firefly-engineering/mosey/wallet"
+	"github.com/firefly-engineering/mosey/walletsolana"
 )
 
 // ServerFlags is the listener-side bundle (`mosey launch`).
 type ServerFlags struct {
 	SessionKeyPath string
-	DevOwner       string   // base58 owner address (in-memory snapshot)
-	DevGrants      []string // repeatable "address=caps" grants
+	// On-chain source (Solana).
+	Program      string
+	RPC          string
+	MaxStaleness time.Duration
+	Commitment   string
+	// In-memory dev stub (no chain).
+	DevOwner  string   // base58 owner address
+	DevGrants []string // repeatable "address=caps" grants
 }
 
 // Register binds the server flags to fs.
 func (f *ServerFlags) Register(fs *flag.FlagSet) {
 	fs.StringVar(&f.SessionKeyPath, "wallet-session-key", "",
 		"path to the persisted Ed25519 session key (the on-chain session identity); created if absent. Enables wallet auth.")
+	fs.StringVar(&f.Program, "wallet-program", "",
+		"base58 program id of the mosey-session program (with --wallet-rpc, resolves ownership/grants on-chain)")
+	fs.StringVar(&f.RPC, "wallet-rpc", "",
+		"Solana JSON-RPC endpoint (e.g. https://api.devnet.solana.com)")
+	fs.DurationVar(&f.MaxStaleness, "wallet-max-staleness", 0,
+		"fail-open budget: serve the last snapshot up to this long during RPC trouble (default 30s)")
+	fs.StringVar(&f.Commitment, "wallet-commitment", "",
+		"Solana commitment for reads/subscriptions (default confirmed)")
 	fs.StringVar(&f.DevOwner, "wallet-dev-owner", "",
 		"base58 wallet address treated as the session owner, via an in-memory snapshot (dev/testing; no chain)")
 	fs.Var((*sliceFlag)(&f.DevGrants), "wallet-dev-grant",
@@ -48,12 +65,18 @@ func (f *ServerFlags) Build() (*auth.WalletAuth, error) {
 	if !f.Configured() {
 		return nil, errors.New("walletflags: --wallet-session-key required for wallet auth")
 	}
-	if f.DevOwner == "" {
-		return nil, errors.New("walletflags: --wallet-dev-owner required (the Solana snapshot source is not wired yet)")
-	}
 	key, err := loadOrCreateKey(f.SessionKeyPath)
 	if err != nil {
 		return nil, fmt.Errorf("walletflags: --wallet-session-key: %w", err)
+	}
+
+	if f.Program != "" {
+		return f.buildChain(key)
+	}
+
+	// In-memory dev stub.
+	if f.DevOwner == "" {
+		return nil, errors.New("walletflags: set --wallet-program (+ --wallet-rpc) for on-chain auth, or --wallet-dev-owner for the in-memory stub")
 	}
 	owner, err := wallet.ParseAddress(f.DevOwner)
 	if err != nil {
@@ -71,6 +94,33 @@ func (f *ServerFlags) Build() (*auth.WalletAuth, error) {
 		SessionKey: key,
 		Source:     wallet.NewMemSource(snap),
 	})
+}
+
+// buildChain wires the Solana-backed snapshot source: it loads an
+// initial snapshot synchronously (so misconfiguration fails fast at
+// launch) and starts a background poll for the process lifetime.
+func (f *ServerFlags) buildChain(key ed25519.PrivateKey) (*auth.WalletAuth, error) {
+	if f.RPC == "" {
+		return nil, errors.New("walletflags: --wallet-rpc is required with --wallet-program")
+	}
+	src, err := walletsolana.New(walletsolana.Options{
+		RPCEndpoint:  f.RPC,
+		ProgramID:    f.Program,
+		SessionKey:   key.Public().(ed25519.PublicKey),
+		MaxStaleness: f.MaxStaleness,
+		Commitment:   f.Commitment,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("walletflags: %w", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	err = src.Refresh(ctx)
+	cancel()
+	if err != nil {
+		return nil, fmt.Errorf("walletflags: initial snapshot: %w", err)
+	}
+	go src.Run(context.Background(), nil)
+	return auth.NewWalletServerAuth(auth.ServerOptions{SessionKey: key, Source: src})
 }
 
 // ClientFlags is the dialer-side bundle (`mosey attach`).
