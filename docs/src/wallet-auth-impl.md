@@ -263,7 +263,7 @@ Built and tested in this repo (Go `go test ./...`, TS `vitest`, Rust
 | A4 | `walletflags`, launch/attach wiring, session keypair | unit + **e2e through `auth.Wrap` over unix + websocket** |
 | A5 (client) | `runWalletHandshake`, `WalletAuthConfig`, `Stream.whenClosed` | **TS e2e against a live `mosey launch`** (happy + reject) |
 | A5 (loopback) | `mosey wallet sign` 127.0.0.1 authorizer + Phantom SPA | handler tests w/ in-process signer; **live Phantom is manual** |
-| B1 | `programs/mosey-session` Anchor program | `cargo check` (host) + **`just anchor-build` produces the `.so`** under the toolbox `solana-toolchain` + **deployed to devnet** (`D64mDEWvdThvEXMaxpeLRAP94wst2WcMiyzb3VqZ23T7`) |
+| B1 | `programs/mosey-session` Anchor program | **`just anchor-test`** (litesvm in-process: 7 cases incl. negatives) + **`just anchor-build`** `.so` + **deployed to devnet** (`D64mDEWvdThvEXMaxpeLRAP94wst2WcMiyzb3VqZ23T7`) |
 | B2 | `walletsolana` Solana `SnapshotSource` | unit w/ fake RPC caller + **live devnet read** (round-trip below) |
 | B3 (off-chain) | `mosey grant` (bearer + `--to`) | **e2e: grant → attach** |
 | B3 (on-chain) | `walletsolana` hand-rolled tx + `mosey session register/transfer/bump-epoch/grant` | unit (wire format) + **all four commands live on devnet** |
@@ -272,13 +272,15 @@ Built and tested in this repo (Go `go test ./...`, TS `vitest`, Rust
 Deferred — each blocked only by infrastructure absent from this
 workspace, not by design:
 
-- **B1 deploy** — **done.** Built under the Nix dev shell
+- **B1 deploy + program tests** — **done.** Built under the Nix dev shell
   (`just anchor-build` → `.so`, `--arch v3` since enabling SBPFv3 raised
   the clusters' minimum deploy version) and **deployed to devnet** as
   `D64mDEWvdThvEXMaxpeLRAP94wst2WcMiyzb3VqZ23T7` (authority
-  `HAAd3Q…gxhX`); `declare_id!` now pins that address. `anchor test`
-  against a local validator remains the one untouched piece (needs a
-  running validator in CI).
+  `HAAd3Q…gxhX`); `declare_id!` now pins that address. `just anchor-test`
+  exercises the program in-process via **litesvm** (no validator) —
+  register/grant/bump-epoch/revoke/transfer + rejection paths (invalid
+  caps, non-owner). solana-test-validator is avoided: it crashes in
+  RocksDB on aarch64-darwin in the toolbox.
 - **B2 live verification** — **done.** `walletsolana.Source` reads the
   live devnet program: the round-trip test registers a session and mints
   a grant, then resolves owner + grant caps from real on-chain state
