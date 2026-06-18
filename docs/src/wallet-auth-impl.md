@@ -248,3 +248,43 @@ grant attaches with nothing transmitted but the viewer's address.
 | `accountSubscribe` WS drops silently | Backstop poll is mandatory, not optional (already in the design). |
 | Devnet program id churn during dev | `--program` override; bake the canonical id only after a stable deploy. |
 | Phantom-only assumption | Scoped deliberately; Phase C sanity-checks others before widening. |
+
+## Implementation status
+
+Built and tested in this repo (Go `go test ./...`, TS `vitest`, Rust
+`cargo check`):
+
+| Phase | What landed | Verification |
+|---|---|---|
+| 0 | `wallet` pkg: `Caps`, `Snapshot`/`SnapshotSource`, in-memory source | unit |
+| A1 | canonical delegation render/parse/`Sign`/`Verify`/`Fold` (Go + TS) | unit + **cross-language golden vector** |
+| A2 | `api/wallet.proto` + generated Go + hand-rolled TS codecs | `proto-check` + round-trip |
+| A3 | `auth.WalletAuth` (mutual handshake, chain fold, fail-closed/on-demand) | unit over `net.Pipe` |
+| A4 | `walletflags`, launch/attach wiring, session keypair | unit + **e2e through `auth.Wrap` over unix + websocket** |
+| A5 (client) | `runWalletHandshake`, `WalletAuthConfig`, `Stream.whenClosed` | **TS e2e against a live `mosey launch`** (happy + reject) |
+| A5 (loopback) | `mosey wallet sign` 127.0.0.1 authorizer + Phantom SPA | handler tests w/ in-process signer; **live Phantom is manual** |
+| B1 | `programs/mosey-session` Anchor program | `cargo check` (host) |
+| B2 | `walletsolana` Solana `SnapshotSource` | unit w/ fake RPC caller |
+| B3 (off-chain) | `mosey grant` (bearer + `--to`) | **e2e: grant → attach** |
+| C | strict-parser fuzz; 8-hop depth cap; owner/admin scoping fix | fuzz (8.5M execs) + unit |
+
+Deferred — each blocked only by infrastructure absent from this
+workspace, not by design:
+
+- **B1 deploy + `anchor test`** — needs the `anchor` + `solana` CLIs
+  (`cargo-build-sbf`). The program type-checks; deploy sets the real
+  `declare_id!` / canonical `--program`.
+- **B2 live verification** — needs the program deployed to devnet; the
+  decode/liveness/budget logic is already unit-tested.
+- **B3 on-chain writes** (`mosey session register/transfer/bump-epoch`,
+  `grant --onchain`) — transaction construction + submission needs a
+  Solana SDK and a deployed program to build against. The off-chain
+  grant channel is complete; the on-chain channel is the chain-write
+  client, to be added with the toolchain.
+- **A5 multi-wallet** (Solflare, Backpack) and the live Phantom flow —
+  need real browsers/extensions; `spike/wallet-sig/sign.html` and
+  `mosey wallet sign` are ready for the manual pass.
+- **`accountSubscribe` push refresh** — the poll backstop (the
+  correctness floor) is implemented; WS push is a latency optimization.
+- **Nix flake** — add Rust/Anchor/Solana to the devshell once the
+  Track-B toolchain is pinned (kept out of `just check` meanwhile).
