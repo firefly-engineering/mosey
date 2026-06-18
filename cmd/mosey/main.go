@@ -38,6 +38,8 @@ func main() {
 		os.Exit(runControl(os.Args[2:], os.Stdout, os.Stderr))
 	case "cert":
 		os.Exit(runCert(os.Args[2:], os.Stdout, os.Stderr))
+	case "grant":
+		os.Exit(runGrant(os.Args[2:], os.Stdout, os.Stderr))
 	case "-h", "--help", "help":
 		usage(os.Stdout)
 		os.Exit(0)
@@ -56,6 +58,7 @@ Usage:
   mosey attach  [flags] ENDPOINT                connect to a running launch
   mosey control SUBCMD [flags] ENDPOINT ...     admin ops (list-clients, promote, kick, demote, set-mode)
   mosey cert    SUBCMD [flags] ...              workspace master + cert minting
+  mosey grant   [flags]                         sign an off-chain wallet-auth delegation
 
 Run "mosey SUBCMD -h" for subcommand-specific flags.`)
 }
