@@ -264,8 +264,9 @@ Built and tested in this repo (Go `go test ./...`, TS `vitest`, Rust
 | A5 (client) | `runWalletHandshake`, `WalletAuthConfig`, `Stream.whenClosed` | **TS e2e against a live `mosey launch`** (happy + reject) |
 | A5 (loopback) | `mosey wallet sign` 127.0.0.1 authorizer + Phantom SPA | handler tests w/ in-process signer; **live Phantom is manual** |
 | B1 | `programs/mosey-session` Anchor program | `cargo check` (host) + **`just anchor-build` produces the `.so`** under the toolbox `solana-toolchain` + **deployed to devnet** (`D64mDEWvdThvEXMaxpeLRAP94wst2WcMiyzb3VqZ23T7`) |
-| B2 | `walletsolana` Solana `SnapshotSource` | unit w/ fake RPC caller |
+| B2 | `walletsolana` Solana `SnapshotSource` | unit w/ fake RPC caller + **live devnet read** (round-trip below) |
 | B3 (off-chain) | `mosey grant` (bearer + `--to`) | **e2e: grant → attach** |
+| B3 (on-chain) | `walletsolana` hand-rolled tx (`RegisterSession`, `Grant`) | **live devnet round-trip**: register → grant → read back via `Source` |
 | C | strict-parser fuzz; 8-hop depth cap; owner/admin scoping fix | fuzz (8.5M execs) + unit |
 
 Deferred — each blocked only by infrastructure absent from this
