@@ -16,11 +16,19 @@ import {
   spawnSync,
   type ChildProcessWithoutNullStreams,
 } from "node:child_process";
-import { access, mkdtemp, readFile } from "node:fs/promises";
+import { generateKeyPairSync } from "node:crypto";
+import { access, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { describe, expect, test } from "vitest";
 import { MoseyClient } from "../src/index.js";
+import { ed25519Sign } from "../src/crypto.js";
+import {
+  AllCaps,
+  base58Encode,
+  formatTime,
+  renderContent,
+} from "../src/wallet-delegation.js";
 
 const moseyBin = resolve(__dirname, "..", "..", "..", "bin", "mosey");
 
@@ -77,12 +85,12 @@ describe("end-to-end interop with `mosey launch`", () => {
     }
 
     const ws = await mintWorkspace("demo");
-    const launcher = await startLaunch({
-      cert: ws.serverCertPath,
-      key: ws.serverKeyPath,
-      masterPub: ws.masterPubPath,
-      workspace: "demo",
-    });
+    const launcher = await startLaunch([
+      `--cert=${ws.serverCertPath}`,
+      `--key=${ws.serverKeyPath}`,
+      `--master-pub=${ws.masterPubPath}`,
+      `--workspace=demo`,
+    ]);
     try {
       const client = await MoseyClient.connect({
         endpoint: launcher.endpoint,
@@ -129,12 +137,12 @@ describe("end-to-end interop with `mosey launch`", () => {
     // master B (with B's masterPub so local validateCertConfig
     // passes). Server-side verify of the client cert fails, server
     // closes the auth stream before ack — client throws.
-    const launcher = await startLaunch({
-      cert: ws1.serverCertPath,
-      key: ws1.serverKeyPath,
-      masterPub: ws1.masterPubPath,
-      workspace: "demo",
-    });
+    const launcher = await startLaunch([
+      `--cert=${ws1.serverCertPath}`,
+      `--key=${ws1.serverKeyPath}`,
+      `--master-pub=${ws1.masterPubPath}`,
+      `--workspace=demo`,
+    ]);
     try {
       await expect(
         MoseyClient.connect({
@@ -155,7 +163,121 @@ describe("end-to-end interop with `mosey launch`", () => {
       launcher.shutdown();
     }
   }, 30_000);
+
+  test("wallet auth + PTY echo round-trip", async () => {
+    if (!(await fileExists(moseyBin))) {
+      console.warn(`[skip] e2e wallet: ${moseyBin} not found. Run \`just build\` first.`);
+      return;
+    }
+    if (typeof WebSocket === "undefined") return;
+
+    const dir = await mkdtemp(join(tmpdir(), "mosey-e2e-wallet-"));
+    const session = genKeypair();
+    const owner = genKeypair();
+    const conn = genKeypair();
+
+    const sessionKeyPath = join(dir, "session.key");
+    await writeFile(sessionKeyPath, Buffer.from(session.priv).toString("hex"));
+
+    // Owner delegates full caps to the connection key.
+    const now = Date.now();
+    const content = renderContent({
+      session: session.pub,
+      delegator: owner.pub,
+      delegate: conn.pub,
+      caps: AllCaps,
+      notBefore: formatTime(new Date(now - 60_000)),
+      notAfter: formatTime(new Date(now + 3_600_000)),
+      nonce: new Uint8Array(16),
+    });
+    const signature = await ed25519Sign(owner.priv, content);
+    const delegationChain = [{ content, signature }];
+
+    const launcher = await startLaunch([
+      `--wallet-session-key=${sessionKeyPath}`,
+      `--wallet-dev-owner=${base58Encode(owner.pub)}`,
+    ]);
+    try {
+      const client = await MoseyClient.connect({
+        endpoint: launcher.endpoint,
+        auth: { type: "wallet", connKey: conn.priv, delegationChain, expectSession: session.pub },
+      });
+      try {
+        const decoder = new TextDecoder();
+        let captured = "";
+        client.onData((chunk) => {
+          captured += decoder.decode(chunk);
+        });
+        client.write(new TextEncoder().encode("hello-wallet\n"));
+        await waitFor(() => captured.includes("hello-wallet"), 5_000);
+        expect(captured).toContain("hello-wallet");
+      } finally {
+        await client.close();
+      }
+    } finally {
+      launcher.shutdown();
+    }
+  }, 30_000);
+
+  test("wallet auth: server rejects an unauthorized wallet", async () => {
+    if (!(await fileExists(moseyBin))) return;
+    if (typeof WebSocket === "undefined") return;
+
+    const dir = await mkdtemp(join(tmpdir(), "mosey-e2e-wallet-"));
+    const session = genKeypair();
+    const owner = genKeypair();
+    const stranger = genKeypair(); // not the owner, no grant
+    const conn = genKeypair();
+    const sessionKeyPath = join(dir, "session.key");
+    await writeFile(sessionKeyPath, Buffer.from(session.priv).toString("hex"));
+
+    const now = Date.now();
+    const content = renderContent({
+      session: session.pub,
+      delegator: stranger.pub,
+      delegate: conn.pub,
+      caps: AllCaps,
+      notBefore: formatTime(new Date(now - 60_000)),
+      notAfter: formatTime(new Date(now + 3_600_000)),
+      nonce: new Uint8Array(16),
+    });
+    const signature = await ed25519Sign(stranger.priv, content);
+
+    const launcher = await startLaunch([
+      `--wallet-session-key=${sessionKeyPath}`,
+      `--wallet-dev-owner=${base58Encode(owner.pub)}`,
+    ]);
+    try {
+      await expect(
+        MoseyClient.connect({
+          endpoint: launcher.endpoint,
+          auth: {
+            type: "wallet",
+            connKey: conn.priv,
+            delegationChain: [{ content, signature }],
+            expectSession: session.pub,
+          },
+        }),
+      ).rejects.toThrow();
+    } finally {
+      launcher.shutdown();
+    }
+  }, 30_000);
 });
+
+// genKeypair returns a fresh Ed25519 keypair in mosey/Go form: the
+// 64-byte private key is seed ‖ public, the public is raw 32 bytes.
+function genKeypair(): { priv: Uint8Array; pub: Uint8Array } {
+  const { publicKey, privateKey } = generateKeyPairSync("ed25519");
+  const spki = publicKey.export({ type: "spki", format: "der" });
+  const pkcs8 = privateKey.export({ type: "pkcs8", format: "der" });
+  const pub = new Uint8Array(spki.subarray(spki.length - 32));
+  const seed = new Uint8Array(pkcs8.subarray(pkcs8.length - 32));
+  const priv = new Uint8Array(64);
+  priv.set(seed, 0);
+  priv.set(pub, 32);
+  return { priv, pub };
+}
 
 // Workspace fixture: a master + a server-side agent cert + a
 // client-side agent cert, all minted via the real `mosey cert`
@@ -231,22 +353,7 @@ interface Launcher {
   shutdown: () => void;
 }
 
-interface CertLaunchOptions {
-  cert: string;
-  key: string;
-  masterPub: string;
-  workspace: string;
-}
-
-async function startLaunch(certOpts?: CertLaunchOptions): Promise<Launcher> {
-  const authArgs = certOpts
-    ? [
-        `--cert=${certOpts.cert}`,
-        `--key=${certOpts.key}`,
-        `--master-pub=${certOpts.masterPub}`,
-        `--workspace=${certOpts.workspace}`,
-      ]
-    : ["--secret=hunter2"];
+async function startLaunch(authArgs: string[] = ["--secret=hunter2"]): Promise<Launcher> {
   const args = [
     "launch",
     ...authArgs,

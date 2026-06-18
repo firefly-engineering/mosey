@@ -171,11 +171,31 @@ export class Stream {
     }
   }
 
+  private closeWaiters: Array<(err: Error) => void> = [];
+
+  /**
+   * whenClosed resolves with the close error when the peer closes or
+   * the socket errors. Lets a raw-byte reader (e.g. the auth ack)
+   * notice a server that drops the stream instead of replying —
+   * readFramed already rejects on close via pendingResolvers, but a
+   * one-off byte read has no frame to wait on.
+   */
+  whenClosed(): Promise<Error> {
+    if (this.closed) {
+      return Promise.resolve(this.closeError ?? new Error("mosey/transport: stream closed"));
+    }
+    return new Promise((resolve) => {
+      this.closeWaiters.push(resolve);
+    });
+  }
+
   private fail(err: Error): void {
     this.closed = true;
     this.closeError = err;
     for (const w of this.pendingResolvers) w.reject(err);
     this.pendingResolvers = [];
+    for (const w of this.closeWaiters) w(err);
+    this.closeWaiters = [];
   }
 }
 

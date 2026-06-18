@@ -20,6 +20,8 @@
 import { PSKAuthOptions, runPSKHandshake } from "./auth.js";
 import { runCertHandshake } from "./cert-auth.js";
 import { verifyCert } from "./cert.js";
+import { runWalletHandshake } from "./wallet-auth.js";
+import { type Delegation } from "./proto.js";
 import { ED25519_PRIVATE_KEY_SIZE, ED25519_PUBLIC_KEY_SIZE } from "./crypto.js";
 import {
   type Cert,
@@ -62,7 +64,24 @@ export interface CertAuthConfig {
   revoked?: ReadonlySet<string>;
 }
 
-export type AuthConfig = PSKAuthConfig | CertAuthConfig;
+/**
+ * WalletAuth — blockchain/wallet based auth. The browser equivalent of
+ * `mosey attach --wallet-grant=... --wallet-conn-key=...`. The wallet
+ * signs the delegation chain out of band (e.g. the loopback signing
+ * page); this config carries the resulting chain plus the connection
+ * key it delegates to.
+ */
+export interface WalletAuthConfig {
+  type: "wallet";
+  /** 64-byte Ed25519 private key for the connection key K_c (Go's seed || public form). */
+  connKey: Uint8Array;
+  /** Delegation chain (root → leaf) authorizing connKey. */
+  delegationChain: Delegation[];
+  /** Optional 32-byte session identity to require the server to prove (MITM protection). */
+  expectSession?: Uint8Array;
+}
+
+export type AuthConfig = PSKAuthConfig | CertAuthConfig | WalletAuthConfig;
 
 export interface ConnectOptions {
   /** WebSocket base URL — `ws://host:port` or `wss://host:port`. */
@@ -233,6 +252,15 @@ async function runAuth(stream: Stream, cfg: AuthConfig): Promise<void> {
       };
       if (cfg.revoked) handshakeOpts.revoked = cfg.revoked;
       await runCertHandshake(stream, handshakeOpts);
+      return;
+    }
+    case "wallet": {
+      const handshakeOpts: Parameters<typeof runWalletHandshake>[1] = {
+        connKey: cfg.connKey,
+        delegationChain: cfg.delegationChain,
+      };
+      if (cfg.expectSession) handshakeOpts.expectSession = cfg.expectSession;
+      await runWalletHandshake(stream, handshakeOpts);
       return;
     }
   }
