@@ -17,6 +17,7 @@ import (
 	"github.com/firefly-engineering/mosey/attach"
 	"github.com/firefly-engineering/mosey/auth"
 	"github.com/firefly-engineering/mosey/cmd/internal/certflags"
+	"github.com/firefly-engineering/mosey/cmd/internal/walletflags"
 	"github.com/firefly-engineering/mosey/transport"
 	httpbackend "github.com/firefly-engineering/mosey/transport/http2"
 	libp2pbackend "github.com/firefly-engineering/mosey/transport/libp2p"
@@ -33,6 +34,8 @@ func runAttach(args []string, stderr *os.File) int {
 	logLevel := fs.String("log-level", "warn", "slog level: debug|info|warn|error")
 	var certCfg certflags.Flags
 	certCfg.Register(fs)
+	var walletCfg walletflags.ClientFlags
+	walletCfg.Register(fs)
 
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -41,12 +44,14 @@ func runAttach(args []string, stderr *os.File) int {
 		fmt.Fprintln(stderr, "mosey attach:", err)
 		return 2
 	}
-	if *secret == "" && !certCfg.Configured() {
-		fmt.Fprintln(stderr, "mosey attach: either --secret (PSK) or --cert/--key/--master-pub (workspace cert) is required")
+	switch authModes(*secret != "", certCfg.Configured(), walletCfg.Configured()) {
+	case 0:
+		fmt.Fprintln(stderr, "mosey attach: one of --secret (PSK), --cert (workspace cert), or --wallet-grant (wallet) is required")
 		return 2
-	}
-	if *secret != "" && certCfg.Configured() {
-		fmt.Fprintln(stderr, "mosey attach: --secret and --cert are mutually exclusive (pick one auth model)")
+	case 1:
+		// exactly one — good
+	default:
+		fmt.Fprintln(stderr, "mosey attach: --secret, --cert, and --wallet-grant are mutually exclusive (pick one auth model)")
 		return 2
 	}
 	if fs.NArg() != 1 {
@@ -57,7 +62,7 @@ func runAttach(args []string, stderr *os.File) int {
 
 	logger := newLogger(stderr, *logLevel)
 
-	authenticator, err := buildAttachAuthenticator(*secret, &certCfg)
+	authenticator, err := buildAttachAuthenticator(*secret, &certCfg, &walletCfg)
 	if err != nil {
 		fmt.Fprintln(stderr, "mosey attach:", err)
 		return 2
@@ -125,7 +130,10 @@ func runAttach(args []string, stderr *os.File) int {
 // buildAttachAuthenticator selects between PSK and cert auth on
 // the attach side. Mirror of vterm's buildAuthenticator, minus the
 // reader-secret concept (attach only carries one credential).
-func buildAttachAuthenticator(secret string, certCfg *certflags.Flags) (auth.Authenticator, error) {
+func buildAttachAuthenticator(secret string, certCfg *certflags.Flags, walletCfg *walletflags.ClientFlags) (auth.Authenticator, error) {
+	if walletCfg.Configured() {
+		return walletCfg.Build()
+	}
 	if certCfg.Configured() {
 		return certCfg.Build()
 	}

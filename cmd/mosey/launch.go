@@ -25,6 +25,7 @@ import (
 	"github.com/firefly-engineering/mosey/auth"
 	"github.com/firefly-engineering/mosey/cert"
 	"github.com/firefly-engineering/mosey/cmd/internal/certflags"
+	"github.com/firefly-engineering/mosey/cmd/internal/walletflags"
 	"github.com/firefly-engineering/mosey/transport"
 	httpbackend "github.com/firefly-engineering/mosey/transport/http2"
 	libp2pbackend "github.com/firefly-engineering/mosey/transport/libp2p"
@@ -52,6 +53,8 @@ func runLaunch(args []string, stderr *os.File) int {
 	readerSecret := fs.String("reader-secret", "", "optional reader PSK; attachers presenting it get observer (no write, no resize) access.")
 	var certCfg certflags.Flags
 	certCfg.Register(fs)
+	var walletCfg walletflags.ServerFlags
+	walletCfg.Register(fs)
 	mode := fs.String("mode", "supersede", "multi-client mode: supersede (newest wins) | exclusive (one at a time) | primary-observer (first writer + observers) | multi-write (everyone types)")
 	httpCert := fs.String("http-cert", "", "PEM-encoded TLS cert path for https:// and wss:// listeners. Required for either scheme in --listen; h2c (http://) and ws:// listen without it.")
 	httpKey := fs.String("http-key", "", "PEM-encoded TLS private key path matching --http-cert.")
@@ -71,12 +74,14 @@ func runLaunch(args []string, stderr *os.File) int {
 		fmt.Fprintln(stderr, "mosey launch:", err)
 		return 2
 	}
-	if *secret == "" && !certCfg.Configured() {
-		fmt.Fprintln(stderr, "mosey launch: either --secret (PSK) or --cert/--key/--master-pub (workspace cert) is required")
+	switch authModes(*secret != "", certCfg.Configured(), walletCfg.Configured()) {
+	case 0:
+		fmt.Fprintln(stderr, "mosey launch: one of --secret (PSK), --cert (workspace cert), or --wallet-session-key (wallet) is required")
 		return 2
-	}
-	if *secret != "" && certCfg.Configured() {
-		fmt.Fprintln(stderr, "mosey launch: --secret and --cert are mutually exclusive (pick one auth model)")
+	case 1:
+		// exactly one — good
+	default:
+		fmt.Fprintln(stderr, "mosey launch: --secret, --cert, and --wallet-session-key are mutually exclusive (pick one auth model)")
 		return 2
 	}
 	argv := fs.Args()
@@ -103,7 +108,7 @@ func runLaunch(args []string, stderr *os.File) int {
 
 	logger := newLogger(stderr, *logLevel)
 
-	authenticator, err := buildAuthenticator(*secret, *readerSecret, &certCfg, stderr)
+	authenticator, err := buildAuthenticator(*secret, *readerSecret, &certCfg, &walletCfg, stderr)
 	if err != nil {
 		fmt.Fprintln(stderr, "mosey launch:", err)
 		return 2
@@ -315,7 +320,25 @@ func watchRevocationFile(ctx context.Context, path string, ca *auth.CertAuth, lo
 // buildAuthenticator picks between the PSK and cert authenticator
 // based on which flags the user set. Flag validation already
 // rejected the "both set" case before this is called.
-func buildAuthenticator(secret, readerSecret string, certCfg *certflags.Flags, stderr *os.File) (auth.Authenticator, error) {
+// authModes counts how many auth models are configured. Exactly one
+// must be selected.
+func authModes(flags ...bool) int {
+	n := 0
+	for _, f := range flags {
+		if f {
+			n++
+		}
+	}
+	return n
+}
+
+func buildAuthenticator(secret, readerSecret string, certCfg *certflags.Flags, walletCfg *walletflags.ServerFlags, stderr *os.File) (auth.Authenticator, error) {
+	if walletCfg.Configured() {
+		if readerSecret != "" {
+			fmt.Fprintln(stderr, "mosey launch: --reader-secret is a PSK concept and is ignored with wallet auth (caps come from on-chain ownership / delegations)")
+		}
+		return walletCfg.Build()
+	}
 	if certCfg.Configured() {
 		if readerSecret != "" {
 			fmt.Fprintln(stderr, "mosey launch: --reader-secret is a PSK concept and is ignored when --cert is set (cert caps come from the cert payload)")

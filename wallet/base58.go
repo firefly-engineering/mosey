@@ -14,6 +14,19 @@ const base58Alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwx
 // the human-facing identity used in delegations and labels.
 func Address(pub ed25519.PublicKey) string { return base58Encode(pub) }
 
+// ParseAddress decodes a base58 (Solana) address into an Ed25519 public
+// key, rejecting anything that is not exactly 32 bytes.
+func ParseAddress(s string) (ed25519.PublicKey, error) {
+	b, err := base58Decode(s)
+	if err != nil {
+		return nil, err
+	}
+	if len(b) != ed25519.PublicKeySize {
+		return nil, fmt.Errorf("wallet: address is %d bytes, want %d", len(b), ed25519.PublicKeySize)
+	}
+	return ed25519.PublicKey(b), nil
+}
+
 // base58Encode encodes b using the Bitcoin/Solana alphabet, mapping each
 // leading zero byte to a leading '1'.
 //

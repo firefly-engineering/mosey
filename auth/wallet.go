@@ -123,6 +123,11 @@ func clockOr(f func() time.Time) func() time.Time {
 // Name implements [Authenticator].
 func (w *WalletAuth) Name() string { return "wallet" }
 
+// SessionID returns the session identity this server-side authenticator
+// proves control of (nil on a client-side instance). Useful for logging
+// "session: <address>" at launch.
+func (w *WalletAuth) SessionID() ed25519.PublicKey { return w.sessionID }
+
 // ServerHandshake reads the client's WalletHello, proves control of the
 // session key, verifies the client controls K_c, and folds the
 // delegation chain into an Identity.
