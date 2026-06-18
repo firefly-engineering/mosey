@@ -14,6 +14,14 @@ const base58Alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwx
 // the human-facing identity used in delegations and labels.
 func Address(pub ed25519.PublicKey) string { return base58Encode(pub) }
 
+// EncodeBase58 encodes arbitrary bytes (e.g. a signature) using the
+// Bitcoin/Solana alphabet.
+func EncodeBase58(b []byte) string { return base58Encode(b) }
+
+// DecodeBase58 decodes an arbitrary base58 (Bitcoin/Solana alphabet)
+// string to bytes. Used for variable-length values such as signatures.
+func DecodeBase58(s string) ([]byte, error) { return base58Decode(s) }
+
 // ParseAddress decodes a base58 (Solana) address into an Ed25519 public
 // key, rejecting anything that is not exactly 32 bytes.
 func ParseAddress(s string) (ed25519.PublicKey, error) {
