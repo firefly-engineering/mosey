@@ -279,14 +279,15 @@ workspace, not by design:
   `HAAd3Q…gxhX`); `declare_id!` now pins that address. `anchor test`
   against a local validator remains the one untouched piece (needs a
   running validator in CI).
-- **B2 live verification** — now unblocked (program is on devnet); the
-  decode/liveness/budget logic is already unit-tested. Needs a live
-  Session/Grant account to read against (created via B3 on-chain writes).
-- **B3 on-chain writes** (`mosey session register/transfer/bump-epoch`,
-  `grant --onchain`) — transaction construction + submission needs a
-  Solana SDK and a deployed program to build against. The off-chain
-  grant channel is complete; the on-chain channel is the chain-write
-  client, to be added with the toolchain.
+- **B2 live verification** — **done.** `walletsolana.Source` reads the
+  live devnet program: the round-trip test registers a session and mints
+  a grant, then resolves owner + grant caps from real on-chain state
+  (`go test ./walletsolana -run TestLive` with `MOSEY_DEVNET_LIVE=1`).
+- **B3 on-chain writes** — write primitives **done** and live-verified
+  (`walletsolana.RegisterSession` / `Grant`, hand-rolled tx in `tx.go`).
+  The off-chain grant channel was already complete. Remaining: wire the
+  primitives to CLI surfaces (`mosey session register/transfer/bump-epoch`,
+  `grant --onchain`) — mechanical, no new chain logic.
 - **A5 multi-wallet** (Solflare, Backpack) and the live Phantom flow —
   need real browsers/extensions; `spike/wallet-sig/sign.html` and
   `mosey wallet sign` are ready for the manual pass.
