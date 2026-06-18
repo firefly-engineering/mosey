@@ -171,16 +171,22 @@ func (w *WalletAuth) ServerHandshake(ctx context.Context, stream io.ReadWriteClo
 		return Identity{}, fmt.Errorf(errPrefixWallet+"%w: client proof signature invalid", ErrUnauthorized)
 	}
 
-	caps, isOwner, root, err := w.resolveCaps(ctx, apiToWalletChain(hello.GetDelegationChain()), connPub)
+	caps, rootIsOwner, root, err := w.resolveCaps(ctx, apiToWalletChain(hello.GetDelegationChain()), connPub)
 	if err != nil {
 		return Identity{}, err
 	}
+	// Admin powers (SetMode/Promote/Kick) require the *full* cap set
+	// flowing unbroken from the session owner — so a write-only or
+	// view-only grant the owner signs to a viewer does not confer them.
+	// Granting the complete set (incl. forge) is a deliberate "co-owner"
+	// act. A grantee-rooted chain is never owner.
+	owner := rootIsOwner && caps == wallet.AllCaps
 	return Identity{
 		Label: wallet.Address(root),
 		Caps: Capabilities{
-			Owner:  isOwner,
-			Write:  isOwner || caps.Has(wallet.CapWrite),
-			Resize: isOwner || caps.Has(wallet.CapResize),
+			Owner:  owner,
+			Write:  caps.Has(wallet.CapWrite),
+			Resize: caps.Has(wallet.CapResize),
 		},
 	}, nil
 }

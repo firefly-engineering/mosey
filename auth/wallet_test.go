@@ -120,6 +120,32 @@ func TestWalletHandshakeOnChainViewer(t *testing.T) {
 	}
 }
 
+func TestWalletHandshakeOwnerGrantIsNotAdmin(t *testing.T) {
+	// The owner signs a *write-only* bearer grant to a connection key.
+	// The chain roots at the owner, but the restricted caps must not
+	// confer admin (owner) powers — only the full cap set does.
+	session := walletKey(t, 1)
+	sessionID := walletPub(session)
+	owner := walletKey(t, 2)
+	kc := walletKey(t, 50)
+	src := wallet.NewMemSource(wallet.NewMemSnapshot(walletPub(owner)))
+
+	chain := []wallet.Delegation{deleg(owner, sessionID, walletPub(kc), wallet.CapWrite)}
+	srvID, _, srvErr, cliErr := handshake(
+		newServer(t, session, src),
+		newClient(t, kc, chain, sessionID),
+	)
+	if srvErr != nil || cliErr != nil {
+		t.Fatalf("handshake errors: server=%v client=%v", srvErr, cliErr)
+	}
+	if srvID.IsOwner() {
+		t.Error("a write-only owner-signed grant must not confer admin")
+	}
+	if !srvID.CanWrite() || srvID.CanResize() {
+		t.Errorf("caps = %+v, want write only", srvID.Caps)
+	}
+}
+
 func TestWalletHandshakeRejectsWrongSession(t *testing.T) {
 	session := walletKey(t, 1)
 	owner := walletKey(t, 2)
