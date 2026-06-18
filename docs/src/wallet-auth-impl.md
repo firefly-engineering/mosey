@@ -262,7 +262,7 @@ Built and tested in this repo (Go `go test ./...`, TS `vitest`, Rust
 | A3 | `auth.WalletAuth` (mutual handshake, chain fold, fail-closed/on-demand) | unit over `net.Pipe` |
 | A4 | `walletflags`, launch/attach wiring, session keypair | unit + **e2e through `auth.Wrap` over unix + websocket** |
 | A5 (client) | `runWalletHandshake`, `WalletAuthConfig`, `Stream.whenClosed` | **TS e2e against a live `mosey launch`** (happy + reject) |
-| A5 (loopback) | `mosey wallet sign` 127.0.0.1 authorizer + wallet SPA | handler tests w/ in-process signer; **raw-bytes signMessage verified live on Phantom + Solflare + Backpack** |
+| A5 (loopback) | `mosey wallet sign` 127.0.0.1 authorizer + wallet SPA | handler tests + **live loopback→attach**: real wallet signs → owner delegates → attach with write+resize; view-only negative enforced. raw-bytes `signMessage` verified on Phantom + Solflare + Backpack |
 | B1 | `programs/mosey-session` Anchor program | **`just anchor-test`** (litesvm in-process: 7 cases incl. negatives) + **`just anchor-build`** `.so` + **deployed to devnet** (`D64mDEWvdThvEXMaxpeLRAP94wst2WcMiyzb3VqZ23T7`) |
 | B2 | `walletsolana` Solana `SnapshotSource` | unit w/ fake RPC caller + **live devnet read** (round-trip below) |
 | B3 (off-chain) | `mosey grant` (bearer + `--to`) | **e2e: grant → attach** |
@@ -290,10 +290,14 @@ workspace, not by design:
   `BumpEpoch`, `Grant`; submit blocks until confirmed). `mosey session
   register/transfer/bump-epoch/grant` wraps them — all verified live on
   devnet. The off-chain `mosey grant` (delegation blob) stays separate.
-- **A5 multi-wallet** — **done.** Phantom, **Solflare**, and **Backpack**
-  all verified via the per-wallet picker in `spike/wallet-sig/sign.html`:
-  each wallet's `signMessage` signs the raw canonical UTF-8 (PASS in
-  `verify.go`, no off-chain envelope), so no server-side framing is needed.
+- **A5 live wallet pass** — **done.** Phantom, **Solflare**, and
+  **Backpack** all verified via the per-wallet picker in
+  `spike/wallet-sig/sign.html`: each wallet's `signMessage` signs the raw
+  canonical UTF-8 (PASS in `verify.go`, no off-chain envelope), so no
+  server-side framing is needed. The full `mosey wallet sign`
+  loopback→attach loop was also exercised end to end with a real wallet
+  (owner delegates write+resize to a connection key → attach succeeds;
+  the view-only variant connects but input is rejected).
 - **`accountSubscribe` push refresh** — the poll backstop (the
   correctness floor) is implemented; WS push is a latency optimization.
 - **Nix flake** — the dev shell pulls the toolbox `solana-toolchain`
