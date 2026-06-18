@@ -8,9 +8,10 @@
 
 use anchor_lang::prelude::*;
 
-// Placeholder program id — replace with the deployed id (and the
-// canonical default baked into mosey) before mainnet.
-declare_id!("11111111111111111111111111111111");
+// Program id. This keypair (target/deploy/mosey_session-keypair.json) is
+// the current devnet deployment; set the canonical mainnet id here before
+// mainnet.
+declare_id!("D64mDEWvdThvEXMaxpeLRAP94wst2WcMiyzb3VqZ23T7");
 
 /// Capability bits, mirroring wallet.Caps. No "owner" bit: ownership is
 /// the structural Session.owner field.

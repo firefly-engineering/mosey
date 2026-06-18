@@ -136,8 +136,13 @@ proto-check:
 # cargo-build-sbf that handles the pinned offline SBF SDK, an isolated
 # RUSTUP_HOME, and the platform-tools toolchain — no download, no host
 # rustup. Not in `just check`.
+#
+# --arch v3 is required: enabling SBPFv3 on the public clusters
+# (SIMD-0178/0189/0377) raised the *minimum* deployable version to v3, so
+# the default v0 stamp is rejected at deploy time as "sbpf_version ... not
+# enabled". v3 is active on devnet (epoch 1069), testnet, and mainnet.
 anchor-build:
-    cd programs/mosey-session && cargo-build-sbf
+    cd programs/mosey-session && cargo-build-sbf --arch v3
 
 # ──────────────────────────────────────────────────────────────────────
 # TypeScript reference client (clients/typescript/)
