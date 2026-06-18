@@ -1,0 +1,5 @@
+# litesvm pulls solana 2.3.x crates whose MSRV is 1.89; the dev shell's
+# default host toolchain is 1.88. Pin this harness (host build only) to
+# 1.89 so `cargo test` here resolves without downgrading those crates.
+[toolchain]
+channel = "1.89.0"

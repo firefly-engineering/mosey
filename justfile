@@ -144,6 +144,21 @@ proto-check:
 anchor-build:
     cd programs/mosey-session && cargo-build-sbf --arch v3
 
+# Behavioral test of the program with litesvm — an in-process Solana VM
+# (no validator, no network, no SOL). Builds the .so, then loads it into
+# litesvm and exercises register/grant/bump-epoch/revoke/transfer plus the
+# rejection paths (invalid caps, non-owner). The harness lives in its own
+# crate (programs/mosey-session-litesvm) so litesvm's Solana version stays
+# isolated from the program's anchor build. Not in `just check` (host-heavy
+# build). solana-test-validator is avoided: it crashes in RocksDB on
+# aarch64-darwin in our toolbox.
+anchor-test:
+    # litesvm's embedded VM doesn't accept SBPFv3; build the baseline arch
+    # for the in-process test (devnet deploys still use --arch v3 via
+    # anchor-build). The arch only changes bytecode encoding, not logic.
+    cd programs/mosey-session && cargo-build-sbf --arch v0
+    cd programs/mosey-session-litesvm && cargo test --tests
+
 # ──────────────────────────────────────────────────────────────────────
 # TypeScript reference client (clients/typescript/)
 #
