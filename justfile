@@ -137,24 +137,31 @@ proto-check:
 sbf-tools-version := "v1.54"
 
 # Build the mosey-session Anchor program (target/deploy/mosey_session.so).
-# Run from the dev shell (provides solana-cli + anchor). Works around two
-# nixpkgs frictions: the SBF SDK lives in the read-only store (copied to a
-# writable cache here), and the default platform-tools predate edition2024
-# (pinned to {{sbf-tools-version}}). Not in `just check` — first run
-# fetches platform-tools over the network.
+# Run from the dev shell. When MOSEY_SBF_SDK is exported (the flake's
+# pinned, offline SBF SDK), the build uses it with --skip-tools-install
+# and never downloads. Otherwise it falls back to a writable copy of the
+# nixpkgs SDK plus a one-time platform-tools fetch (systems without a
+# pinned hash yet). Not in `just check`.
 anchor-build:
     #!/usr/bin/env bash
     set -euo pipefail
-    cache="${XDG_CACHE_HOME:-$HOME/.cache}/mosey-sbf"
-    pkgbin="$(dirname "$(command -v cargo-build-sbf)")"
-    if [ ! -d "$cache/platform-tools-sdk" ]; then
-        mkdir -p "$cache"
-        cp -R "$pkgbin/platform-tools-sdk" "$cache/"
-        chmod -R u+w "$cache"
-    fi
-    export SBF_SDK_PATH="$cache/platform-tools-sdk/sbf"
     cd programs/mosey-session
-    cargo build-sbf --tools-version {{sbf-tools-version}}
+    if [ -n "${MOSEY_SBF_SDK:-}" ]; then
+        echo "using pinned SBF SDK: $MOSEY_SBF_SDK (offline)"
+        SBF_SDK_PATH="$MOSEY_SBF_SDK" \
+            cargo build-sbf --skip-tools-install --tools-version {{sbf-tools-version}}
+    else
+        echo "no pinned SBF SDK; using writable copy + platform-tools fetch"
+        cache="${XDG_CACHE_HOME:-$HOME/.cache}/mosey-sbf"
+        pkgbin="$(dirname "$(command -v cargo-build-sbf)")"
+        if [ ! -d "$cache/platform-tools-sdk" ]; then
+            mkdir -p "$cache"
+            cp -R "$pkgbin/platform-tools-sdk" "$cache/"
+            chmod -R u+w "$cache"
+        fi
+        SBF_SDK_PATH="$cache/platform-tools-sdk/sbf" \
+            cargo build-sbf --tools-version {{sbf-tools-version}}
+    fi
 
 # ──────────────────────────────────────────────────────────────────────
 # TypeScript reference client (clients/typescript/)

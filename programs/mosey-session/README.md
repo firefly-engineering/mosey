@@ -18,16 +18,24 @@ deployable `.so` with:
 just anchor-build                 # → target/deploy/mosey_session.so
 ```
 
-This is verified working on `aarch64-darwin`. Two nixpkgs frictions are
-handled by the recipe (see `justfile`):
+The build is **offline / pinned** (verified on `aarch64-darwin`): the
+flake fetches platform-tools v1.54 as a fixed-output derivation, mounts
+it into a complete SBF SDK, and exports `MOSEY_SBF_SDK`. `just
+anchor-build` uses it with `--skip-tools-install`, so nothing is
+downloaded at build time. This sidesteps two nixpkgs frictions: the
+SBF SDK ships read-only in the store (so `cargo-build-sbf` can't install
+platform-tools next to it), and the default platform-tools (v1.51 /
+Rust 1.84) predate the program's `edition2024` deps (v1.54 ships Rust
+1.89).
 
-- the SBF SDK ships in the **read-only Nix store**, so `cargo-build-sbf`
-  can't install platform-tools next to it — the recipe copies the SDK to
-  a writable cache and points `SBF_SDK_PATH` there;
-- the **default platform-tools (v1.51 / Rust 1.84) are too old** for the
-  program's `edition2024` deps — the recipe pins `--tools-version v1.54`
-  (Rust 1.89). First run fetches platform-tools over the network (impure;
-  the fully-hermetic version is the eventual toolbox/FOD goal).
+The platform-tools hash is pinned per system in `flake.nix`; only
+`aarch64-darwin` is filled today (others are a TODO for the toolbox
+move). On a system without a pinned hash, the recipe falls back to a
+writable copy + a one-time platform-tools fetch.
+
+(`cargo-build-sbf` logs a benign `ln: ... 'criterion': Permission
+denied` — it tries to drop a bench symlink into the read-only SDK; the
+`.so` is still produced.)
 
 Deploy + IDL + on-chain tests (need a funded keypair / validator):
 

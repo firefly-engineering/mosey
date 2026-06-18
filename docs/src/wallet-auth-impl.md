@@ -288,9 +288,11 @@ workspace, not by design:
   `mosey wallet sign` are ready for the manual pass.
 - **`accountSubscribe` push refresh** — the poll backstop (the
   correctness floor) is implemented; WS push is a latency optimization.
-- **Nix flake** — `solana-cli` + `anchor` are now in the dev shell and
-  `just anchor-build` builds the program. Remaining: make it fully
-  hermetic (pin platform-tools v1.54 as a fixed-output derivation in the
-  toolbox, dropping the first-run network fetch) and consider splitting
-  the heavy on-chain tools into a `.#onchain` shell. Kept out of
-  `just check`.
+- **Nix flake** — `solana-cli` + `anchor` are in the dev shell and
+  `just anchor-build` builds the program **offline**: platform-tools
+  v1.54 is pinned as a fixed-output derivation, mounted into a complete
+  SBF SDK, and used via `--skip-tools-install` (no build-time download,
+  verified on `aarch64-darwin`). Remaining: fill the platform-tools
+  hashes for the other three systems and move the whole thing into the
+  toolbox; consider a `.#onchain` shell to keep the ~300 MiB off the
+  default shell. Kept out of `just check`.

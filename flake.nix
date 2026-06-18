@@ -32,6 +32,38 @@
         system:
         let
           pkgs = pkgsFor system;
+
+          # On-chain (wallet auth) SBF toolchain. nixpkgs' solana-cli
+          # ships the SBF SDK *scaffolding* but not the platform-tools
+          # toolchain (sbpf rustc/LLVM), and its default tools predate the
+          # program's edition2024 deps. Pin platform-tools as a
+          # fixed-output derivation and assemble a complete, offline SBF
+          # SDK so `just anchor-build` never downloads. Hashes are
+          # per-system; fill the rest when this moves to the toolbox.
+          sbfToolsVersion = "v1.54";
+          sbfAsset = {
+            x86_64-linux = "platform-tools-linux-x86_64.tar.bz2";
+            aarch64-linux = "platform-tools-linux-aarch64.tar.bz2";
+            x86_64-darwin = "platform-tools-osx-x86_64.tar.bz2";
+            aarch64-darwin = "platform-tools-osx-aarch64.tar.bz2";
+          };
+          sbfHash = {
+            aarch64-darwin = "sha256-HIs69ehhThxFk5OpXFsZv7zI7ROCKhy1OfrmhHH5v7s=";
+            # TODO(toolbox): x86_64-darwin / aarch64-linux / x86_64-linux.
+          };
+          hasPinnedSbf = builtins.hasAttr system sbfHash;
+          platformTools = pkgs.fetchurl {
+            url = "https://github.com/anza-xyz/platform-tools/releases/download/${sbfToolsVersion}/${sbfAsset.${system}}";
+            hash = sbfHash.${system} or "";
+          };
+          # A complete SBF SDK: nixpkgs scaffolding + pinned platform-tools
+          # mounted where cargo-build-sbf --skip-tools-install expects them.
+          sbfSdk = pkgs.runCommand "mosey-sbf-sdk-${sbfToolsVersion}" { } ''
+            cp -R ${pkgs.solana-cli}/bin/platform-tools-sdk $out
+            chmod -R u+w $out
+            mkdir -p $out/sbf/dependencies/platform-tools
+            tar -xjf ${platformTools} -C $out/sbf/dependencies/platform-tools
+          '';
         in
         {
           # Full developer shell. Mirrors shepherd's so contributors who
@@ -50,11 +82,10 @@
                 # Test runner with cleaner output + per-package summaries
                 gotestsum
                 # On-chain (wallet auth, Track B): Solana CLI + Anchor.
-                # `just anchor-build` does the SBF build (these ship the
-                # SDK read-only + a too-old default toolchain, so the
-                # recipe uses a writable copy + platform-tools v1.54).
-                # Heavyweight (~300 MiB) — a candidate to split into a
-                # `.#onchain` shell or the toolbox later.
+                # `just anchor-build` builds the program against the pinned
+                # SBF SDK below (MOSEY_SBF_SDK) — no download. Heavyweight
+                # (~300 MiB) — a candidate to split into a `.#onchain`
+                # shell or the toolbox later.
                 solana-cli
                 anchor
               ]
@@ -68,6 +99,9 @@
 
             shellHook = ''
               echo "mosey dev shell"
+            ''
+            + pkgs.lib.optionalString hasPinnedSbf ''
+              export MOSEY_SBF_SDK="${sbfSdk}/sbf"
             '';
           };
         }
