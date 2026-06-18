@@ -3,8 +3,10 @@ module github.com/firefly-engineering/mosey
 go 1.26.2
 
 require (
+	filippo.io/edwards25519 v1.2.0
 	github.com/creack/pty v1.1.24
 	github.com/gorilla/websocket v1.5.3
+	github.com/hinshun/vt10x v0.0.0-20220301184237-5011da428d02
 	github.com/libp2p/go-libp2p v0.48.0
 	github.com/libp2p/go-libp2p-kad-dht v0.40.0
 	github.com/multiformats/go-multiaddr v0.16.1
@@ -33,7 +35,6 @@ require (
 	github.com/google/gopacket v1.1.19 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/hashicorp/golang-lru v1.0.2 // indirect
-	github.com/hinshun/vt10x v0.0.0-20220301184237-5011da428d02 // indirect
 	github.com/huin/goupnp v1.3.0 // indirect
 	github.com/ipfs/boxo v0.39.0 // indirect
 	github.com/ipfs/go-cid v0.6.1 // indirect
