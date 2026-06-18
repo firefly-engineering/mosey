@@ -93,7 +93,7 @@
               src = ./.;
               # Bump when go.sum changes; `nix build` will print the
               # expected value on mismatch.
-              vendorHash = null;
+              vendorHash = "sha256-RmZizDdfzNVYE1yRVYwWbQjHaGekqq9wUyuuchylBKc=";
               subPackages = [ "cmd/mosey" ];
               ldflags = [
                 "-s"
