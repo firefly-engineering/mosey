@@ -49,6 +49,14 @@
                 protoc-gen-go
                 # Test runner with cleaner output + per-package summaries
                 gotestsum
+                # On-chain (wallet auth, Track B): Solana CLI + Anchor.
+                # `just anchor-build` does the SBF build (these ship the
+                # SDK read-only + a too-old default toolchain, so the
+                # recipe uses a writable copy + platform-tools v1.54).
+                # Heavyweight (~300 MiB) — a candidate to split into a
+                # `.#onchain` shell or the toolbox later.
+                solana-cli
+                anchor
               ]
               ++ (with toolbox.packages.${system}; [
                 beadwork

@@ -263,7 +263,7 @@ Built and tested in this repo (Go `go test ./...`, TS `vitest`, Rust
 | A4 | `walletflags`, launch/attach wiring, session keypair | unit + **e2e through `auth.Wrap` over unix + websocket** |
 | A5 (client) | `runWalletHandshake`, `WalletAuthConfig`, `Stream.whenClosed` | **TS e2e against a live `mosey launch`** (happy + reject) |
 | A5 (loopback) | `mosey wallet sign` 127.0.0.1 authorizer + Phantom SPA | handler tests w/ in-process signer; **live Phantom is manual** |
-| B1 | `programs/mosey-session` Anchor program | `cargo check` (host) |
+| B1 | `programs/mosey-session` Anchor program | `cargo check` (host) + **`just anchor-build` produces the `.so`** under nixpkgs solana-cli/anchor |
 | B2 | `walletsolana` Solana `SnapshotSource` | unit w/ fake RPC caller |
 | B3 (off-chain) | `mosey grant` (bearer + `--to`) | **e2e: grant → attach** |
 | C | strict-parser fuzz; 8-hop depth cap; owner/admin scoping fix | fuzz (8.5M execs) + unit |
@@ -271,9 +271,11 @@ Built and tested in this repo (Go `go test ./...`, TS `vitest`, Rust
 Deferred — each blocked only by infrastructure absent from this
 workspace, not by design:
 
-- **B1 deploy + `anchor test`** — needs the `anchor` + `solana` CLIs
-  (`cargo-build-sbf`). The program type-checks; deploy sets the real
-  `declare_id!` / canonical `--program`.
+- **B1 deploy + `anchor test`** — the program now **builds** under the
+  Nix dev shell (`just anchor-build` → `.so`, verified). Deploying
+  (`solana program deploy`) needs a funded keypair; `anchor test` needs
+  a running validator. Deploy then sets the real `declare_id!` /
+  canonical `--program`.
 - **B2 live verification** — needs the program deployed to devnet; the
   decode/liveness/budget logic is already unit-tested.
 - **B3 on-chain writes** (`mosey session register/transfer/bump-epoch`,
@@ -286,5 +288,9 @@ workspace, not by design:
   `mosey wallet sign` are ready for the manual pass.
 - **`accountSubscribe` push refresh** — the poll backstop (the
   correctness floor) is implemented; WS push is a latency optimization.
-- **Nix flake** — add Rust/Anchor/Solana to the devshell once the
-  Track-B toolchain is pinned (kept out of `just check` meanwhile).
+- **Nix flake** — `solana-cli` + `anchor` are now in the dev shell and
+  `just anchor-build` builds the program. Remaining: make it fully
+  hermetic (pin platform-tools v1.54 as a fixed-output derivation in the
+  toolbox, dropping the first-run network fetch) and consider splitting
+  the heavy on-chain tools into a `.#onchain` shell. Kept out of
+  `just check`.

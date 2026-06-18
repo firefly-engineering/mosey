@@ -11,20 +11,29 @@ snapshot cache follows.
 
 ## Status & toolchain
 
-`cargo check` passes on the host (type-checks the program, account
-constraints, and Anchor macros). A **deployable** build and on-chain
-tests need toolchain not present in this workspace:
-
-- `solana` CLI (provides `cargo-build-sbf` / the SBF platform tools)
-- `anchor` CLI (`anchor build`, `anchor test`, IDL generation)
-
-With those installed:
+The dev shell provides `solana-cli` + `anchor` (from nixpkgs). Build the
+deployable `.so` with:
 
 ```sh
-anchor build                      # produces target/deploy/mosey_session.so + IDL
-anchor test                       # localnet integration tests
-solana program deploy \           # deploy (devnet shown)
-  --url devnet target/deploy/mosey_session.so
+just anchor-build                 # → target/deploy/mosey_session.so
+```
+
+This is verified working on `aarch64-darwin`. Two nixpkgs frictions are
+handled by the recipe (see `justfile`):
+
+- the SBF SDK ships in the **read-only Nix store**, so `cargo-build-sbf`
+  can't install platform-tools next to it — the recipe copies the SDK to
+  a writable cache and points `SBF_SDK_PATH` there;
+- the **default platform-tools (v1.51 / Rust 1.84) are too old** for the
+  program's `edition2024` deps — the recipe pins `--tools-version v1.54`
+  (Rust 1.89). First run fetches platform-tools over the network (impure;
+  the fully-hermetic version is the eventual toolbox/FOD goal).
+
+Deploy + IDL + on-chain tests (need a funded keypair / validator):
+
+```sh
+anchor build                      # IDL + .so via the same toolchain
+solana program deploy --url devnet target/deploy/mosey_session.so
 ```
 
 After the first deploy, set the real program id in `declare_id!` (it is

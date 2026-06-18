@@ -128,6 +128,35 @@ proto-check:
     done
 
 # ──────────────────────────────────────────────────────────────────────
+# On-chain program (wallet auth, Track B)
+# ──────────────────────────────────────────────────────────────────────
+
+# platform-tools version with a Rust new enough for the program's
+# edition2024 deps. nixpkgs solana-cli's default (v1.51 / Rust 1.84) is
+# one release too old; v1.54 ships Rust 1.89.
+sbf-tools-version := "v1.54"
+
+# Build the mosey-session Anchor program (target/deploy/mosey_session.so).
+# Run from the dev shell (provides solana-cli + anchor). Works around two
+# nixpkgs frictions: the SBF SDK lives in the read-only store (copied to a
+# writable cache here), and the default platform-tools predate edition2024
+# (pinned to {{sbf-tools-version}}). Not in `just check` — first run
+# fetches platform-tools over the network.
+anchor-build:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cache="${XDG_CACHE_HOME:-$HOME/.cache}/mosey-sbf"
+    pkgbin="$(dirname "$(command -v cargo-build-sbf)")"
+    if [ ! -d "$cache/platform-tools-sdk" ]; then
+        mkdir -p "$cache"
+        cp -R "$pkgbin/platform-tools-sdk" "$cache/"
+        chmod -R u+w "$cache"
+    fi
+    export SBF_SDK_PATH="$cache/platform-tools-sdk/sbf"
+    cd programs/mosey-session
+    cargo build-sbf --tools-version {{sbf-tools-version}}
+
+# ──────────────────────────────────────────────────────────────────────
 # TypeScript reference client (clients/typescript/)
 #
 # Assumes Node 22+ on PATH. The flake doesn't pin nodejs — the
