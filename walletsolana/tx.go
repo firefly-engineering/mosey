@@ -17,6 +17,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"filippo.io/edwards25519"
 
@@ -280,6 +281,17 @@ func (s *Source) grantPDA(sessionAddr pubkey, grantee ed25519.PublicKey) (pubkey
 	return findPDA(prog, []byte("grant"), sessionAddr[:], grantee)
 }
 
+// SessionAddress returns the base58 on-chain account (PDA) address for a
+// session key — the value used as `--wallet-session` (attach) and
+// `--session` (grant).
+func (s *Source) SessionAddress(sessionKey ed25519.PublicKey) (string, error) {
+	addr, _, err := s.sessionPDA(sessionKey)
+	if err != nil {
+		return "", err
+	}
+	return wallet.EncodeBase58(addr[:]), nil
+}
+
 // RegisterSession submits register_session, co-signed by the owner (payer)
 // and the session key. Returns the transaction signature.
 func (s *Source) RegisterSession(ctx context.Context, owner, sessionKey ed25519.PrivateKey) (string, error) {
@@ -344,7 +356,59 @@ func (s *Source) Grant(ctx context.Context, owner ed25519.PrivateKey, sessionKey
 	return s.submit(ctx, ownerPub, []instruction{ix}, map[pubkey]ed25519.PrivateKey{ownerPub: owner})
 }
 
-// submit compiles, signs, and sends one transaction.
+// TransferOwnership submits transfer_ownership(new_owner), owner-signed.
+// sessionKey identifies the session whose owner field is updated.
+func (s *Source) TransferOwnership(ctx context.Context, owner ed25519.PrivateKey, sessionKey, newOwner ed25519.PublicKey) (string, error) {
+	prog, err := s.programPubkey()
+	if err != nil {
+		return "", err
+	}
+	ownerPub := toPubkey(owner.Public().(ed25519.PublicKey))
+	sessionAddr, _, err := s.sessionPDA(sessionKey)
+	if err != nil {
+		return "", err
+	}
+	disc := ixDiscriminator("transfer_ownership")
+	data := append([]byte(nil), disc[:]...)
+	data = append(data, newOwner...) // new_owner: Pubkey (32)
+	ix := instruction{
+		programID: prog,
+		accounts: []accountMeta{
+			{key: sessionAddr, isSigner: false, writable: true},
+			{key: ownerPub, isSigner: true, writable: true},
+		},
+		data: data,
+	}
+	return s.submit(ctx, ownerPub, []instruction{ix}, map[pubkey]ed25519.PrivateKey{ownerPub: owner})
+}
+
+// BumpEpoch submits bump_epoch — a one-transaction mass-revoke that
+// invalidates every grant stamped with the prior epoch. Owner-signed.
+func (s *Source) BumpEpoch(ctx context.Context, owner ed25519.PrivateKey, sessionKey ed25519.PublicKey) (string, error) {
+	prog, err := s.programPubkey()
+	if err != nil {
+		return "", err
+	}
+	ownerPub := toPubkey(owner.Public().(ed25519.PublicKey))
+	sessionAddr, _, err := s.sessionPDA(sessionKey)
+	if err != nil {
+		return "", err
+	}
+	disc := ixDiscriminator("bump_epoch")
+	ix := instruction{
+		programID: prog,
+		accounts: []accountMeta{
+			{key: sessionAddr, isSigner: false, writable: true},
+			{key: ownerPub, isSigner: true, writable: true},
+		},
+		data: append([]byte(nil), disc[:]...),
+	}
+	return s.submit(ctx, ownerPub, []instruction{ix}, map[pubkey]ed25519.PrivateKey{ownerPub: owner})
+}
+
+// submit compiles, signs, sends, and confirms one transaction. It blocks
+// until the signature reaches the configured commitment so a follow-up
+// command (e.g. register → grant) sees the on-chain effect.
 func (s *Source) submit(ctx context.Context, feePayer pubkey, ixs []instruction, signers map[pubkey]ed25519.PrivateKey) (string, error) {
 	bh, err := s.getLatestBlockhash(ctx)
 	if err != nil {
@@ -358,7 +422,49 @@ func (s *Source) submit(ctx context.Context, feePayer pubkey, ixs []instruction,
 	if err != nil {
 		return "", err
 	}
-	return s.sendTransaction(ctx, tx)
+	sig, err := s.sendTransaction(ctx, tx)
+	if err != nil {
+		return "", err
+	}
+	if err := s.confirmTransaction(ctx, sig); err != nil {
+		return sig, err
+	}
+	return sig, nil
+}
+
+// confirmTransaction polls getSignatureStatuses until sig reaches a
+// confirmed/finalized commitment (or fails). Returns nil once confirmed.
+func (s *Source) confirmTransaction(ctx context.Context, sig string) error {
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+	for {
+		raw, err := s.call(ctx, "getSignatureStatuses", []any{
+			[]string{sig},
+			map[string]any{"searchTransactionHistory": true},
+		})
+		if err == nil {
+			var out struct {
+				Value []*struct {
+					ConfirmationStatus string          `json:"confirmationStatus"`
+					Err                json.RawMessage `json:"err"`
+				} `json:"value"`
+			}
+			if jerr := json.Unmarshal(raw, &out); jerr == nil && len(out.Value) > 0 && out.Value[0] != nil {
+				st := out.Value[0]
+				if len(st.Err) > 0 && string(st.Err) != "null" {
+					return fmt.Errorf("walletsolana: transaction %s failed: %s", sig, st.Err)
+				}
+				if st.ConfirmationStatus == "confirmed" || st.ConfirmationStatus == "finalized" {
+					return nil
+				}
+			}
+		}
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("walletsolana: confirming %s: %w", sig, ctx.Err())
+		case <-ticker.C:
+		}
+	}
 }
 
 // wallet8 is the on-chain caps byte (mirrors wallet.Caps' underlying u8).
