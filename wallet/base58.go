@@ -1,6 +1,7 @@
 package wallet
 
 import (
+	"crypto/ed25519"
 	"fmt"
 	"math/big"
 	"strings"
@@ -8,6 +9,10 @@ import (
 
 // base58Alphabet is the Bitcoin / Solana alphabet.
 const base58Alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+
+// Address renders a public key as its base58 (Solana) address string —
+// the human-facing identity used in delegations and labels.
+func Address(pub ed25519.PublicKey) string { return base58Encode(pub) }
 
 // base58Encode encodes b using the Bitcoin/Solana alphabet, mapping each
 // leading zero byte to a leading '1'.
