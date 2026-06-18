@@ -22,8 +22,8 @@
   we must match that framing server-side.
 </p>
 
-<button id="connect">1. Connect wallet</button>
-<button id="sign" disabled>2. Sign delegation</button>
+<div id="wallets"><b>1. Connect a wallet:</b> <i>detecting…</i></div>
+<p><button id="sign" disabled>2. Sign delegation</button></p>
 
 <h3>Canonical content (what the wallet should display):</h3>
 <pre id="content">(connect first)</pre>
@@ -58,11 +58,28 @@
     ].join("\n");
   }
 
-  const provider = window.phantom?.solana ?? window.solana ?? window.solflare;
+  // Each wallet injects under its own global, so key off those directly
+  // rather than window.solana (which only one wallet can claim at a time).
+  function detectProviders() {
+    const out = [];
+    const seen = new Set();
+    const add = (name, p) => { if (p && !seen.has(p)) { seen.add(p); out.push({ name, p }); } };
+    add("Phantom", window.phantom?.solana);
+    add("Solflare", window.solflare);
+    add("Backpack", window.backpack?.solana ?? (window.backpack?.isBackpack ? window.backpack : null));
+    const ws = window.solana; // whatever currently owns the default global
+    if (ws && !seen.has(ws)) {
+      const who = ws.isPhantom ? "Phantom" : ws.isSolflare ? "Solflare" : ws.isBackpack ? "Backpack" : "unknown";
+      add(`${who} (window.solana)`, ws);
+    }
+    return out;
+  }
+
+  let provider;
   let fields;
 
-  document.getElementById("connect").onclick = async () => {
-    if (!provider) { alert("No Solana wallet found (Phantom/Solflare/Backpack)."); return; }
+  async function connect(p) {
+    provider = p;
     const resp = await provider.connect();
     const wallet = (resp?.publicKey ?? provider.publicKey).toString();
     fields = {
@@ -76,7 +93,27 @@
     };
     document.getElementById("content").textContent = render(fields);
     document.getElementById("sign").disabled = false;
-  };
+  }
+
+  function renderWallets() {
+    const box = document.getElementById("wallets");
+    const found = detectProviders();
+    box.innerHTML = "<b>1. Connect a wallet:</b> ";
+    if (!found.length) {
+      box.insertAdjacentText("beforeend", "no Solana wallet detected (install Phantom / Solflare / Backpack).");
+      return;
+    }
+    for (const { name, p } of found) {
+      const btn = document.createElement("button");
+      btn.textContent = name;
+      btn.onclick = () => connect(p).catch((e) => alert(e?.message ?? String(e)));
+      box.appendChild(btn);
+    }
+  }
+
+  // Extensions inject asynchronously; scan now and again shortly after load.
+  renderWallets();
+  setTimeout(renderWallets, 600);
 
   document.getElementById("sign").onclick = async () => {
     const content = render(fields);

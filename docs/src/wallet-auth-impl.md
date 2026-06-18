@@ -290,9 +290,11 @@ workspace, not by design:
   `BumpEpoch`, `Grant`; submit blocks until confirmed). `mosey session
   register/transfer/bump-epoch/grant` wraps them — all verified live on
   devnet. The off-chain `mosey grant` (delegation blob) stays separate.
-- **A5 multi-wallet** (Solflare, Backpack) and the live Phantom flow —
-  need real browsers/extensions; `spike/wallet-sig/sign.html` and
-  `mosey wallet sign` are ready for the manual pass.
+- **A5 multi-wallet** — partial. **Solflare verified**: its `signMessage`
+  signs the raw canonical UTF-8 (PASS in `verify.go`, no envelope), via the
+  per-wallet picker in `spike/wallet-sig/sign.html`. Phantom is the built-in
+  assumption; **Backpack still pending** (needs the extension). The live
+  `mosey wallet sign` loopback→attach pass also remains manual.
 - **`accountSubscribe` push refresh** — the poll backstop (the
   correctness floor) is implemented; WS push is a latency optimization.
 - **Nix flake** — the dev shell pulls the toolbox `solana-toolchain`
