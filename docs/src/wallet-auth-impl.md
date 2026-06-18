@@ -266,7 +266,7 @@ Built and tested in this repo (Go `go test ./...`, TS `vitest`, Rust
 | B1 | `programs/mosey-session` Anchor program | `cargo check` (host) + **`just anchor-build` produces the `.so`** under the toolbox `solana-toolchain` + **deployed to devnet** (`D64mDEWvdThvEXMaxpeLRAP94wst2WcMiyzb3VqZ23T7`) |
 | B2 | `walletsolana` Solana `SnapshotSource` | unit w/ fake RPC caller + **live devnet read** (round-trip below) |
 | B3 (off-chain) | `mosey grant` (bearer + `--to`) | **e2e: grant → attach** |
-| B3 (on-chain) | `walletsolana` hand-rolled tx (`RegisterSession`, `Grant`) | **live devnet round-trip**: register → grant → read back via `Source` |
+| B3 (on-chain) | `walletsolana` hand-rolled tx + `mosey session register/transfer/bump-epoch/grant` | unit (wire format) + **all four commands live on devnet** |
 | C | strict-parser fuzz; 8-hop depth cap; owner/admin scoping fix | fuzz (8.5M execs) + unit |
 
 Deferred — each blocked only by infrastructure absent from this
@@ -283,11 +283,11 @@ workspace, not by design:
   live devnet program: the round-trip test registers a session and mints
   a grant, then resolves owner + grant caps from real on-chain state
   (`go test ./walletsolana -run TestLive` with `MOSEY_DEVNET_LIVE=1`).
-- **B3 on-chain writes** — write primitives **done** and live-verified
-  (`walletsolana.RegisterSession` / `Grant`, hand-rolled tx in `tx.go`).
-  The off-chain grant channel was already complete. Remaining: wire the
-  primitives to CLI surfaces (`mosey session register/transfer/bump-epoch`,
-  `grant --onchain`) — mechanical, no new chain logic.
+- **B3 on-chain writes** — **done.** `walletsolana` hand-rolls the four
+  owner-signed transactions (`RegisterSession`, `TransferOwnership`,
+  `BumpEpoch`, `Grant`; submit blocks until confirmed). `mosey session
+  register/transfer/bump-epoch/grant` wraps them — all verified live on
+  devnet. The off-chain `mosey grant` (delegation blob) stays separate.
 - **A5 multi-wallet** (Solflare, Backpack) and the live Phantom flow —
   need real browsers/extensions; `spike/wallet-sig/sign.html` and
   `mosey wallet sign` are ready for the manual pass.
