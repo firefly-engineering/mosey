@@ -333,6 +333,33 @@ P4  ── Ergonomics ───────────────────�
 P0 is small — it is `mosey attach` to a reachable host with a web
 front-end, behind your VPN. Everything after is additive.
 
+## Implementation status
+
+Built and tested in this repo (`go test ./...`):
+
+| Area | What landed | Verification |
+|---|---|---|
+| P0 bridge | `mosey web`: embedded xterm SPA + per-WS `attach.Run` bridge (binary frames = PTY, JSON resize control); `attach.Options.ResizeC` for non-TTY size; shared `buildClientTransport` | e2e: browser-style WS through the gateway echoes through a `cat` host (unix socket) |
+| Discovery (where) | libp2p `RoutedHost` so `Dial` resolves a bare `/p2p/<session-key>` via `dht.FindPeer` | `parseEndpoint` tests (bare + full forms) |
+| Wallet login | `--wallet-login`: `/login/prepare` mints `K` + renders the `W→K` delegation, `/login/callback` verifies the wallet signature and builds a per-login `auth.Wrap`; `/config`-driven browser sign flow; caps default view-only, never `forge`; `--delegation-ttl` ~16h | e2e: a local key signs the delegation; attach echoes over the authorized WS |
+| Dashboard (which) | `walletsolana.SessionsByOwner` — owner-indexed `getProgramAccounts` listing a wallet's sessions | unit (fake RPC) |
+
+Remaining (not yet built):
+
+- **Dashboard wiring + multi-session attach** — a gateway `/sessions`
+  endpoint over `SessionsByOwner`, and per-login *target selection* (dial
+  the chosen `session_key` via the DHT) instead of a single `--target`.
+  Grantee listing needs the extra `Grant → Session` hop.
+- **Governance writes** — transfer / grant / revoke / bump in the UI.
+  Needs **unsigned-transaction building** in `walletsolana` (the current
+  builders sign+submit with a local owner key; browser-wallet signing
+  needs the unsigned message handed out for `signTransaction`, then
+  submit) plus web3.js signing in the page. Best verified on devnet.
+- **Multi-user hardening** — per-wallet resource limits; the per-WS
+  isolation is structural already.
+- **Offline assets** — xterm.js is loaded from a CDN; vendoring it into
+  the embed is a follow-up.
+
 ## Decisions made
 
 - **Multi-user / team gateway** (not single-user) — per-login `W → K`
