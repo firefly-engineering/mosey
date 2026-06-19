@@ -14,9 +14,38 @@ import (
 	ic "github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/peer"
 
+	"github.com/firefly-engineering/mosey/cmd/internal/walletflags"
 	"github.com/firefly-engineering/mosey/wallet"
 	"github.com/firefly-engineering/mosey/walletsolana"
 )
+
+// resolveSessionPub resolves the session's public key from a base58
+// --session or a --session-name (the public half of the managed key at
+// ~/.mosey/sessions/<name>.key). Exactly one must be set.
+func resolveSessionPub(session, name string) (ed25519.PublicKey, error) {
+	switch {
+	case session != "" && name != "":
+		return nil, fmt.Errorf("mosey web: set only one of --session or --session-name")
+	case session != "":
+		pub, err := wallet.ParseAddress(session)
+		if err != nil {
+			return nil, fmt.Errorf("--session: %w", err)
+		}
+		return pub, nil
+	case name != "":
+		path, err := walletflags.KeyPathForName(name)
+		if err != nil {
+			return nil, err
+		}
+		k, err := loadHexKey(path)
+		if err != nil {
+			return nil, fmt.Errorf("--session-name: %w", err)
+		}
+		return k.Public().(ed25519.PublicKey), nil
+	default:
+		return nil, fmt.Errorf("--session or --session-name required")
+	}
+}
 
 // sessionLister is the chain read the dashboard needs — satisfied by
 // *walletsolana.Source, faked in tests.

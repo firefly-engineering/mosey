@@ -23,6 +23,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/firefly-engineering/mosey/cmd/internal/walletflags"
 	"github.com/firefly-engineering/mosey/wallet"
 	"github.com/firefly-engineering/mosey/walletsolana"
 )
@@ -68,11 +69,27 @@ Common flags (env defaults in parentheses):
 
 // onchainConfig holds the flags every session subcommand shares.
 type onchainConfig struct {
-	keypair    string
-	sessionKey string // hex session key path
-	session    string // base58 session key (pubkey) alternative
-	rpc        string
-	program    string
+	keypair     string
+	sessionKey  string // hex session key path
+	sessionName string // managed key under ~/.mosey/sessions/<name>.key
+	session     string // base58 session key (pubkey) alternative
+	rpc         string
+	program     string
+}
+
+// keyPath resolves the session key file from --wallet-session-key or
+// --session-name. Errors if neither is set.
+func (c *onchainConfig) keyPath() (string, error) {
+	if c.sessionKey != "" {
+		if c.sessionName != "" {
+			return "", errors.New("set only one of --wallet-session-key or --session-name")
+		}
+		return c.sessionKey, nil
+	}
+	if c.sessionName != "" {
+		return walletflags.KeyPathForName(c.sessionName)
+	}
+	return "", errors.New("--wallet-session-key or --session-name required")
 }
 
 func (c *onchainConfig) register(fs *flag.FlagSet, withSessionFlag bool) {
@@ -84,6 +101,8 @@ func (c *onchainConfig) register(fs *flag.FlagSet, withSessionFlag bool) {
 		"base58 mosey-session program id. Default $MOSEY_DEVNET_PROGRAM")
 	fs.StringVar(&c.sessionKey, "wallet-session-key", "",
 		"path to the hex Ed25519 session key (same file as `mosey launch`); used for its public key")
+	fs.StringVar(&c.sessionName, "session-name", "",
+		"named session key under ~/.mosey/sessions/<name>.key (alternative to --wallet-session-key)")
 	if withSessionFlag {
 		fs.StringVar(&c.session, "session", "",
 			"base58 session key (public) — alternative to --wallet-session-key")
@@ -106,10 +125,14 @@ func (c *onchainConfig) source(sessionPub ed25519.PublicKey) (*walletsolana.Sour
 // hex private key file) or --session (a base58 public key).
 func (c *onchainConfig) sessionPub() (ed25519.PublicKey, error) {
 	switch {
-	case c.sessionKey != "":
-		k, err := loadHexKey(c.sessionKey)
+	case c.sessionKey != "" || c.sessionName != "":
+		path, err := c.keyPath()
 		if err != nil {
-			return nil, fmt.Errorf("--wallet-session-key: %w", err)
+			return nil, err
+		}
+		k, err := loadHexKey(path)
+		if err != nil {
+			return nil, fmt.Errorf("session key: %w", err)
 		}
 		return k.Public().(ed25519.PublicKey), nil
 	case c.session != "":
@@ -119,7 +142,7 @@ func (c *onchainConfig) sessionPub() (ed25519.PublicKey, error) {
 		}
 		return pub, nil
 	default:
-		return nil, errors.New("one of --session or --wallet-session-key is required")
+		return nil, errors.New("one of --session, --session-name, or --wallet-session-key is required")
 	}
 }
 
@@ -131,21 +154,22 @@ func runSessionRegister(args []string, stdout, stderr *os.File) int {
 	if code, done := parseOnchain(fs, args, stderr); done {
 		return code
 	}
-	if c.sessionKey == "" {
-		fmt.Fprintln(stderr, "mosey session register: --wallet-session-key is required")
+	keyPath, err := c.keyPath()
+	if err != nil {
+		fmt.Fprintln(stderr, "mosey session register:", err)
 		return 2
 	}
 	owner, code := loadOwner(c.keypair, stderr)
 	if owner == nil {
 		return code
 	}
-	sessionKey, created, err := loadOrCreateHexKey(c.sessionKey)
+	sessionKey, created, err := loadOrCreateHexKey(keyPath)
 	if err != nil {
-		fmt.Fprintln(stderr, "mosey session register: --wallet-session-key:", err)
+		fmt.Fprintln(stderr, "mosey session register: session key:", err)
 		return 2
 	}
 	if created {
-		fmt.Fprintf(stderr, "mosey session register: generated new session key at %s\n", c.sessionKey)
+		fmt.Fprintf(stderr, "mosey session register: generated new session key at %s\n", keyPath)
 	}
 	src, err := c.source(sessionKey.Public().(ed25519.PublicKey))
 	if err != nil {

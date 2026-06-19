@@ -28,9 +28,16 @@ Runs `PROGRAM` under a PTY and announces listeners.
 | `--http-cert` / `--http-key` | Required when any `--listen` is `https://` or `wss://`. |
 | `--no-p2p-bootstrap` | Skip the IPFS public bootstrap set. LAN-only / offline use. |
 | `--log-level` | `debug` \| `info` \| `warn` (default) \| `error`. |
+| `--secret` / `--cert` / `--wallet-session-key` / `--session-name` | Auth model: PSK, workspace cert, or [wallet](wallet-auth.md). For wallet auth, name the session key by path (`--wallet-session-key`) or by name (`--session-name NAME` → `~/.mosey/sessions/NAME.key`); either is created if absent. The **session id** is printed at launch. |
 
 Exit code mirrors the child process when it exits cleanly, `1` on
 operational errors, `2` on bad flags.
+
+> **Named sessions.** `--session-name NAME` is a convenience across
+> `mosey launch`, `mosey web`, and the `mosey session` family: the key
+> lives at `~/.mosey/sessions/NAME.key`, load-or-created. So creating and
+> running a wallet session is just `mosey session register --session-name
+> demo --keypair owner.json` then `mosey launch --session-name demo -- bash`.
 
 ## `mosey attach`
 

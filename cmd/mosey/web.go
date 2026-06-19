@@ -59,6 +59,7 @@ func runWeb(args []string, stderr *os.File) int {
 	secret := fs.String("secret", "", "static-mode PSK to authenticate to the host; mutually exclusive with --cert / --wallet-grant / --wallet-login.")
 	walletLogin := fs.Bool("wallet-login", false, "per-browser wallet login: each user signs a fresh W→K delegation in the page (multi-user).")
 	session := fs.String("session", "", "base58 session key the target host runs (fixed-session --wallet-login; the delegation names it).")
+	sessionName := fs.String("session-name", "", "named session key under ~/.mosey/sessions/<name>.key; its public key is used as the session (alternative to --session).")
 	walletRPC := fs.String("wallet-rpc", "", "Solana JSON-RPC endpoint; with --wallet-program enables the dashboard + multi-session attach (browser picks the session).")
 	walletProgram := fs.String("wallet-program", "", "base58 mosey-session program id; with --wallet-rpc enables the dashboard + multi-session attach.")
 	delegationTTL := fs.Duration("delegation-ttl", defaultDelegationTTL, "validity of each W→K delegation in --wallet-login mode")
@@ -87,8 +88,8 @@ func runWeb(args []string, stderr *os.File) int {
 		}
 		if !multiSession {
 			// Fixed-session mode needs both the session and a dial target.
-			if *session == "" {
-				fmt.Fprintln(stderr, "mosey web: --session is required with --wallet-login (or set --wallet-rpc + --wallet-program for the multi-session dashboard)")
+			if *session == "" && *sessionName == "" {
+				fmt.Fprintln(stderr, "mosey web: --session or --session-name is required with --wallet-login (or set --wallet-rpc + --wallet-program for the multi-session dashboard)")
 				return 2
 			}
 			if *target == "" {
@@ -153,9 +154,9 @@ func runWeb(args []string, stderr *os.File) int {
 			gw.lister = src
 			gw.gov = src
 		} else {
-			sessionKey, err := wallet.ParseAddress(*session)
+			sessionKey, err := resolveSessionPub(*session, *sessionName)
 			if err != nil {
-				fmt.Fprintln(stderr, "mosey web: --session:", err)
+				fmt.Fprintln(stderr, "mosey web:", err)
 				return 2
 			}
 			gw.sessionKey = sessionKey

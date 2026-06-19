@@ -26,9 +26,34 @@ import (
 	"github.com/firefly-engineering/mosey/walletsolana"
 )
 
+// DefaultSessionDir is where named session keys live:
+// ~/.mosey/sessions.
+func DefaultSessionDir() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, ".mosey", "sessions"), nil
+}
+
+// KeyPathForName resolves a session name to its managed key path,
+// ~/.mosey/sessions/<name>.key. The name must be a plain filename (no
+// path separators, not "." or "..").
+func KeyPathForName(name string) (string, error) {
+	if name == "" || name == "." || name == ".." || strings.ContainsAny(name, `/\`) {
+		return "", fmt.Errorf("invalid session name %q (use a plain name, no path separators)", name)
+	}
+	dir, err := DefaultSessionDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, name+".key"), nil
+}
+
 // ServerFlags is the listener-side bundle (`mosey launch`).
 type ServerFlags struct {
 	SessionKeyPath string
+	SessionName    string // managed key under ~/.mosey/sessions/<name>.key
 	// On-chain source (Solana).
 	Program      string
 	RPC          string
@@ -43,6 +68,8 @@ type ServerFlags struct {
 func (f *ServerFlags) Register(fs *flag.FlagSet) {
 	fs.StringVar(&f.SessionKeyPath, "wallet-session-key", "",
 		"path to the persisted Ed25519 session key (the on-chain session identity); created if absent. Enables wallet auth.")
+	fs.StringVar(&f.SessionName, "session-name", "",
+		"named session key under ~/.mosey/sessions/<name>.key; created if absent. A convenience alternative to --wallet-session-key. Enables wallet auth.")
 	fs.StringVar(&f.Program, "wallet-program", "",
 		"base58 program id of the mosey-session program (with --wallet-rpc, resolves ownership/grants on-chain)")
 	fs.StringVar(&f.RPC, "wallet-rpc", "",
@@ -58,13 +85,32 @@ func (f *ServerFlags) Register(fs *flag.FlagSet) {
 }
 
 // Configured reports whether wallet auth was selected.
-func (f *ServerFlags) Configured() bool { return f.SessionKeyPath != "" }
+func (f *ServerFlags) Configured() bool { return f.SessionKeyPath != "" || f.SessionName != "" }
+
+// keyPath resolves the session key file from --wallet-session-key (an
+// explicit path) or --session-name (managed under ~/.mosey/sessions/).
+func (f *ServerFlags) keyPath() (string, error) {
+	if f.SessionKeyPath != "" {
+		if f.SessionName != "" {
+			return "", errors.New("walletflags: set only one of --wallet-session-key or --session-name")
+		}
+		return f.SessionKeyPath, nil
+	}
+	if f.SessionName != "" {
+		return KeyPathForName(f.SessionName)
+	}
+	return "", errors.New("walletflags: --wallet-session-key or --session-name required for wallet auth")
+}
 
 // SessionPublic loads (creating if absent) the session key and returns
 // its public half — the base58 session id the chain registers and that
 // clients name via `mosey attach --wallet-session` / `mosey web --session`.
 func (f *ServerFlags) SessionPublic() (ed25519.PublicKey, error) {
-	key, err := loadOrCreateKey(f.SessionKeyPath)
+	path, err := f.keyPath()
+	if err != nil {
+		return nil, err
+	}
+	key, err := loadOrCreateKey(path)
 	if err != nil {
 		return nil, err
 	}
@@ -73,12 +119,13 @@ func (f *ServerFlags) SessionPublic() (ed25519.PublicKey, error) {
 
 // Build resolves the server-side wallet authenticator.
 func (f *ServerFlags) Build() (*auth.WalletAuth, error) {
-	if !f.Configured() {
-		return nil, errors.New("walletflags: --wallet-session-key required for wallet auth")
-	}
-	key, err := loadOrCreateKey(f.SessionKeyPath)
+	path, err := f.keyPath()
 	if err != nil {
-		return nil, fmt.Errorf("walletflags: --wallet-session-key: %w", err)
+		return nil, err
+	}
+	key, err := loadOrCreateKey(path)
+	if err != nil {
+		return nil, fmt.Errorf("walletflags: session key: %w", err)
 	}
 
 	if f.Program != "" {
