@@ -58,7 +58,7 @@ func runGrant(args []string, stdout, stderr *os.File) int {
 		fmt.Fprintln(stderr, "mosey grant: --session:", err)
 		return 2
 	}
-	caps, err := wallet.ParseCaps(*capsStr)
+	caps, err := wallet.ParseCapsLenient(*capsStr)
 	if err != nil {
 		fmt.Fprintln(stderr, "mosey grant: --caps:", err)
 		return 2

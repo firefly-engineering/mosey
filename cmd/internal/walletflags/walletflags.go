@@ -235,7 +235,7 @@ func parseGrant(s string) (ed25519.PublicKey, wallet.Caps, error) {
 	if err != nil {
 		return nil, 0, err
 	}
-	caps, err := wallet.ParseCaps(capsStr)
+	caps, err := wallet.ParseCapsLenient(capsStr)
 	if err != nil {
 		return nil, 0, err
 	}

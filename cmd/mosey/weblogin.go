@@ -105,7 +105,7 @@ func (g *webGateway) handleLoginPrepare(w http.ResponseWriter, r *http.Request) 
 	}
 	caps := wallet.Caps(0) // view-only default
 	if req.Caps != "" {
-		if caps, err = wallet.ParseCaps(req.Caps); err != nil {
+		if caps, err = wallet.ParseCapsLenient(req.Caps); err != nil {
 			http.Error(w, "bad caps", http.StatusBadRequest)
 			return
 		}

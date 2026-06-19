@@ -79,3 +79,33 @@ func TestCapsHas(t *testing.T) {
 		t.Error("Has should accept a multi-bit mask it fully covers")
 	}
 }
+
+func TestParseCapsLenient(t *testing.T) {
+	wr := CapWrite | CapResize
+	cases := []struct {
+		in   string
+		want Caps
+	}{
+		{"write,resize", wr},
+		{"write, resize", wr},
+		{"resize, write", wr},   // order-independent
+		{" write , resize ", wr}, // extra spaces
+		{"write,resize,", wr},    // trailing comma
+		{"view-only", 0},
+		{"", 0},
+		{"forge", CapForge},
+	}
+	for _, c := range cases {
+		got, err := ParseCapsLenient(c.in)
+		if err != nil {
+			t.Errorf("ParseCapsLenient(%q): %v", c.in, err)
+			continue
+		}
+		if got != c.want {
+			t.Errorf("ParseCapsLenient(%q) = %d, want %d", c.in, got, c.want)
+		}
+	}
+	if _, err := ParseCapsLenient("write,bogus"); err == nil {
+		t.Error("ParseCapsLenient(write,bogus) = nil, want error")
+	}
+}

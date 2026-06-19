@@ -81,3 +81,31 @@ func ParseCaps(s string) (Caps, error) {
 	}
 	return c, nil
 }
+
+// ParseCapsLenient parses a caps string from user input — CLI flags and
+// API requests — tolerating spacing and order: "write,resize",
+// "write, resize", and "resize, write" all parse the same. Empty or
+// "view-only" mean no caps. Use [ParseCaps] (strict) for signed
+// delegation content, where exact canonical bytes matter; use this for
+// anything a human or client types.
+func ParseCapsLenient(s string) (Caps, error) {
+	if strings.TrimSpace(s) == "" || s == "view-only" {
+		return 0, nil
+	}
+	var c Caps
+	for tok := range strings.SplitSeq(s, ",") {
+		switch strings.TrimSpace(tok) {
+		case "":
+			// tolerate a trailing comma / empty token
+		case "write":
+			c |= CapWrite
+		case "resize":
+			c |= CapResize
+		case "forge":
+			c |= CapForge
+		default:
+			return 0, fmt.Errorf("wallet: invalid caps token %q in %q", strings.TrimSpace(tok), s)
+		}
+	}
+	return c, nil
+}

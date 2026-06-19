@@ -73,7 +73,7 @@ func runWalletSign(args []string, stdout, stderr *os.File) int {
 		fmt.Fprintln(stderr, "mosey wallet sign: --delegate:", err)
 		return 2
 	}
-	caps, err := wallet.ParseCaps(*capsStr)
+	caps, err := wallet.ParseCapsLenient(*capsStr)
 	if err != nil {
 		fmt.Fprintln(stderr, "mosey wallet sign: --caps:", err)
 		return 2

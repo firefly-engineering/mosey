@@ -243,7 +243,7 @@ func runSessionGrant(args []string, stdout, stderr *os.File) int {
 		fmt.Fprintln(stderr, "mosey session grant: --to:", err)
 		return 2
 	}
-	caps, err := wallet.ParseCaps(*capsStr)
+	caps, err := wallet.ParseCapsLenient(*capsStr)
 	if err != nil {
 		fmt.Fprintln(stderr, "mosey session grant: --caps:", err)
 		return 2
