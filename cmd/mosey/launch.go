@@ -27,6 +27,7 @@ import (
 	"github.com/firefly-engineering/mosey/cmd/internal/certflags"
 	"github.com/firefly-engineering/mosey/cmd/internal/walletflags"
 	"github.com/firefly-engineering/mosey/transport"
+	"github.com/firefly-engineering/mosey/wallet"
 	httpbackend "github.com/firefly-engineering/mosey/transport/http2"
 	libp2pbackend "github.com/firefly-engineering/mosey/transport/libp2p"
 	unixbackend "github.com/firefly-engineering/mosey/transport/unix"
@@ -152,6 +153,11 @@ func runLaunch(args []string, stderr *os.File) int {
 	endpoints := authed.Endpoints()
 	for _, ep := range endpoints {
 		fmt.Fprintf(stderr, "mosey launch: listening: %s\n", ep)
+	}
+	if walletCfg.Configured() {
+		if pub, err := walletCfg.SessionPublic(); err == nil {
+			fmt.Fprintf(stderr, "mosey launch: session id: %s\n", wallet.Address(pub))
+		}
 	}
 
 	// Detached child path: write the same endpoint lines (plus the

@@ -60,6 +60,17 @@ func (f *ServerFlags) Register(fs *flag.FlagSet) {
 // Configured reports whether wallet auth was selected.
 func (f *ServerFlags) Configured() bool { return f.SessionKeyPath != "" }
 
+// SessionPublic loads (creating if absent) the session key and returns
+// its public half — the base58 session id the chain registers and that
+// clients name via `mosey attach --wallet-session` / `mosey web --session`.
+func (f *ServerFlags) SessionPublic() (ed25519.PublicKey, error) {
+	key, err := loadOrCreateKey(f.SessionKeyPath)
+	if err != nil {
+		return nil, err
+	}
+	return key.Public().(ed25519.PublicKey), nil
+}
+
 // Build resolves the server-side wallet authenticator.
 func (f *ServerFlags) Build() (*auth.WalletAuth, error) {
 	if !f.Configured() {
