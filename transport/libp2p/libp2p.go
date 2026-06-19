@@ -24,6 +24,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/protocol"
+	routedhost "github.com/libp2p/go-libp2p/p2p/host/routed"
 	"github.com/libp2p/go-libp2p/p2p/security/noise"
 	"github.com/multiformats/go-multiaddr"
 
@@ -150,6 +151,13 @@ func New(ctx context.Context, opts Options) (*Backend, error) {
 		for _, info := range bootstrap {
 			_ = h.Connect(ctx, info)
 		}
+		// Wrap the host so Dial can reach a bare /p2p/<peer-id> with no
+		// transport addrs: Connect falls back to dht.FindPeer to resolve
+		// current addresses. This is what lets the web gateway dial a
+		// session_key (== peer id) instead of a full multiaddr. Hosts in
+		// the public DHT (incl. AutoRelay'd ones) resolve; otherwise pass
+		// a full multiaddr.
+		h = routedhost.Wrap(h, kdht)
 	}
 
 	return &Backend{host: h, ownsHost: true}, nil
@@ -203,9 +211,10 @@ func (b *Backend) Unhandle(proto string) {
 //   - bare multiaddr starting with `/`: "/ip4/.../p2p/..."
 //   - prefixed: "libp2p:/ip4/.../p2p/..."
 //
-// Both resolve via [peer.AddrInfoFromP2pAddr]. The connection's
-// peer id and dialable addrs are extracted from the multiaddr —
-// no DHT lookup at this layer.
+// Both resolve via [peer.AddrInfoFromP2pAddr]. A full multiaddr
+// carries its own dialable addrs; a bare "/p2p/<peer-id>" carries
+// only the id, and Connect resolves current addrs via the DHT when
+// the host was built with bootstrap peers (see New's routedhost.Wrap).
 func (b *Backend) Dial(ctx context.Context, endpoint, proto string) (transport.Stream, error) {
 	info, err := parseEndpoint(endpoint)
 	if err != nil {
