@@ -374,17 +374,22 @@ func (s *Source) submit(ctx context.Context, feePayer pubkey, ixs []instruction,
 	if err != nil {
 		return "", err
 	}
-	if err := s.confirmTransaction(ctx, sig); err != nil {
+	if err := s.confirmTransaction(ctx, sig, tx); err != nil {
 		return sig, err
 	}
 	return sig, nil
 }
 
 // confirmTransaction polls getSignatureStatuses until sig reaches a
-// confirmed/finalized commitment (or fails). Returns nil once confirmed.
-func (s *Source) confirmTransaction(ctx context.Context, sig string) error {
+// confirmed/finalized commitment (or fails). It also rebroadcasts the
+// signed tx periodically: a single send can be dropped on a busy cluster
+// and Solana does not re-include a tx automatically, so resending the
+// same bytes lands it while its blockhash is still valid. Pass tx == nil
+// to disable rebroadcast.
+func (s *Source) confirmTransaction(ctx context.Context, sig string, tx []byte) error {
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
+	ticks := 0
 	for {
 		raw, err := s.call(ctx, "getSignatureStatuses", []any{
 			[]string{sig},
@@ -413,6 +418,10 @@ func (s *Source) confirmTransaction(ctx context.Context, sig string) error {
 			// signature); we just stopped waiting for confirmation.
 			return fmt.Errorf("walletsolana: transaction %s submitted but not confirmed in time — it may still land; check it on an explorer: %w", sig, ctx.Err())
 		case <-ticker.C:
+			ticks++
+			if tx != nil && ticks%3 == 0 {
+				_, _ = s.sendTransaction(ctx, tx) // rebroadcast; ignore transient errors
+			}
 		}
 	}
 }

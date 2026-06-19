@@ -185,7 +185,7 @@ func (s *Source) SubmitSigned(ctx context.Context, tx []byte) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if err := s.confirmTransaction(ctx, sig); err != nil {
+	if err := s.confirmTransaction(ctx, sig, tx); err != nil {
 		return sig, err
 	}
 	return sig, nil
