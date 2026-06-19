@@ -10,6 +10,7 @@ import (
 	"os/signal"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"golang.org/x/sys/unix"
 	"golang.org/x/term"
@@ -112,8 +113,9 @@ func localTerminalSize(stdin io.Reader) (cols, rows uint32, err error) {
 
 // watchSIGWINCH installs a SIGWINCH handler that re-queries the
 // local terminal size and forwards it to the remote via the control
-// client. Runs until ctx is cancelled.
-func watchSIGWINCH(ctx context.Context, stdin io.Reader, control *controlClient, logger *slog.Logger) {
+// client. Runs until ctx is cancelled. lastSize is updated with each
+// forwarded size so the attach loop can re-send it after a reconnect.
+func watchSIGWINCH(ctx context.Context, stdin io.Reader, control *controlClient, lastSize *atomic.Uint64, logger *slog.Logger) {
 	if control == nil {
 		return
 	}
@@ -130,8 +132,39 @@ func watchSIGWINCH(ctx context.Context, stdin io.Reader, control *controlClient,
 			if err != nil || cols == 0 || rows == 0 {
 				continue
 			}
+			lastSize.Store(uint64(cols)<<32 | uint64(rows))
 			if err := control.SendResize(cols, rows); err != nil {
 				logger.Warn("forward SIGWINCH", "err", err)
+				return
+			}
+		}
+	}
+}
+
+// forwardResizes pumps PTY size changes from resizeC to the remote via
+// the control client — the non-TTY counterpart to watchSIGWINCH, used
+// when the size source is a browser (web gateway) rather than a local
+// terminal. Updates lastSize for the attach loop's post-reconnect
+// re-send. Runs until ctx is cancelled or resizeC is closed.
+func forwardResizes(ctx context.Context, resizeC <-chan [2]uint32, control *controlClient, lastSize *atomic.Uint64, logger *slog.Logger) {
+	if control == nil {
+		return
+	}
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case sz, ok := <-resizeC:
+			if !ok {
+				return
+			}
+			cols, rows := sz[0], sz[1]
+			if cols == 0 || rows == 0 {
+				continue
+			}
+			lastSize.Store(uint64(cols)<<32 | uint64(rows))
+			if err := control.SendResize(cols, rows); err != nil {
+				logger.Warn("forward resize", "err", err)
 				return
 			}
 		}

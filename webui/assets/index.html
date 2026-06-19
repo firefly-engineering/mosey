@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>mosey · web terminal</title>
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.css"
+    />
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: #1d1f21;
+        color: #c5c8c6;
+        font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+      }
+      header {
+        display: flex;
+        gap: 0.5rem;
+        align-items: center;
+        padding: 0.5rem 0.75rem;
+        background: #282a2e;
+        border-bottom: 1px solid #373b41;
+        font-size: 0.85rem;
+      }
+      #status {
+        margin-left: auto;
+        color: #969896;
+      }
+      #terminal {
+        height: calc(100vh - 44px);
+        padding: 0.25rem;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <strong>mosey</strong>
+      <span id="target"></span>
+      <span id="status">connecting…</span>
+    </header>
+    <div id="terminal"></div>
+
+    <script type="module">
+      // P0: a thin terminal-over-WebSocket protocol between the browser
+      // and the gateway. Binary frames carry PTY bytes both ways; a JSON
+      // text frame {type:"resize",cols,rows} carries size changes. The
+      // gateway does all the libp2p + mosey-auth work behind this socket.
+      const { Terminal } = await import(
+        "https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/+esm"
+      );
+      const { FitAddon } = await import(
+        "https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/+esm"
+      );
+
+      const statusEl = document.getElementById("status");
+      const setStatus = (s) => (statusEl.textContent = s);
+
+      const term = new Terminal({
+        cursorBlink: true,
+        convertEol: false,
+        theme: { background: "#1d1f21", foreground: "#c5c8c6" },
+      });
+      const fit = new FitAddon();
+      term.loadAddon(fit);
+      term.open(document.getElementById("terminal"));
+      fit.fit();
+
+      const wsURL = new URL("ws", location.href);
+      wsURL.protocol = location.protocol === "https:" ? "wss:" : "ws:";
+      const ws = new WebSocket(wsURL);
+      ws.binaryType = "arraybuffer";
+
+      const enc = new TextEncoder();
+      const dec = new TextDecoder();
+
+      const sendResize = () => {
+        if (ws.readyState !== WebSocket.OPEN) return;
+        ws.send(
+          JSON.stringify({ type: "resize", cols: term.cols, rows: term.rows }),
+        );
+      };
+
+      ws.addEventListener("open", () => {
+        setStatus("connected");
+        sendResize();
+      });
+      ws.addEventListener("message", (ev) => {
+        if (typeof ev.data === "string") return; // reserved for control
+        term.write(new Uint8Array(ev.data));
+      });
+      ws.addEventListener("close", () => setStatus("disconnected"));
+      ws.addEventListener("error", () => setStatus("error"));
+
+      term.onData((s) => {
+        if (ws.readyState === WebSocket.OPEN) ws.send(enc.encode(s));
+      });
+      term.onResize(() => sendResize());
+      window.addEventListener("resize", () => {
+        fit.fit();
+        sendResize();
+      });
+    </script>
+  </body>
+</html>

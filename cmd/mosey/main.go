@@ -49,6 +49,8 @@ func main() {
 		os.Exit(runSession(os.Args[2:], os.Stdout, os.Stderr))
 	case "wallet":
 		os.Exit(runWallet(os.Args[2:], os.Stdout, os.Stderr))
+	case "web":
+		os.Exit(runWeb(os.Args[2:], os.Stderr))
 	case "-h", "--help", "help":
 		usage(os.Stdout)
 		os.Exit(0)
@@ -70,6 +72,7 @@ Usage:
   mosey grant   [flags]                         sign an off-chain wallet-auth delegation
   mosey session SUBCMD [flags]                   on-chain session ops (register, transfer, bump-epoch, grant)
   mosey wallet  SUBCMD [flags]                   browser-wallet ops (sign: approve a grant via Phantom)
+  mosey web     [flags] --target ENDPOINT        serve a browser terminal that bridges to a mosey host
 
 Run "mosey SUBCMD -h" for subcommand-specific flags.`)
 }

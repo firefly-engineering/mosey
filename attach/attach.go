@@ -60,6 +60,13 @@ type Options struct {
 	Stdin  io.Reader
 	Stdout io.Writer
 	Stderr io.Writer
+
+	// ResizeC, when non-nil, is the source of PTY size changes
+	// (cols, rows) — used instead of the local-TTY SIGWINCH path.
+	// Non-TTY callers (e.g. the web gateway, where size arrives as a
+	// browser control message) set this; the latest value is also
+	// re-sent after every (re)attach. A zero cols or rows is ignored.
+	ResizeC <-chan [2]uint32
 }
 
 // Run dials Target, opens the /mosey/pty stream, and blocks until
@@ -95,14 +102,24 @@ func Run(ctx context.Context, opts Options) error {
 	if err != nil {
 		return err
 	}
+	// lastSize holds the most recent PTY size as cols<<32 | rows (0 =
+	// unknown). Both the SIGWINCH watcher and the ResizeC forwarder
+	// keep it current so the post-(re)attach re-send below has a value
+	// regardless of which size source is in play.
+	var lastSize atomic.Uint64
 	if control != nil {
 		defer func() { _ = control.Close() }()
-		if cols, rows, sizeErr := localTerminalSize(stdin); sizeErr == nil && cols > 0 && rows > 0 {
-			if err := control.SendResize(cols, rows); err != nil {
-				logger.Warn("initial resize", "err", err)
+		if opts.ResizeC != nil {
+			go forwardResizes(ctx, opts.ResizeC, control, &lastSize, logger)
+		} else {
+			if cols, rows, sizeErr := localTerminalSize(stdin); sizeErr == nil && cols > 0 && rows > 0 {
+				lastSize.Store(uint64(cols)<<32 | uint64(rows))
+				if err := control.SendResize(cols, rows); err != nil {
+					logger.Warn("initial resize", "err", err)
+				}
 			}
+			go watchSIGWINCH(ctx, stdin, control, &lastSize, logger)
 		}
-		go watchSIGWINCH(ctx, stdin, control, logger)
 	}
 
 	if f, ok := stdin.(*os.File); ok && term.IsTerminal(int(f.Fd())) {
@@ -147,8 +164,8 @@ func Run(ctx context.Context, opts Options) error {
 		// catches the same geometry against a now-registered
 		// client. Cheap and idempotent.
 		if control != nil {
-			if cols, rows, sizeErr := localTerminalSize(stdin); sizeErr == nil && cols > 0 && rows > 0 {
-				if err := control.SendResize(cols, rows); err != nil {
+			if packed := lastSize.Load(); packed != 0 {
+				if err := control.SendResize(uint32(packed>>32), uint32(packed)); err != nil {
 					logger.Warn("post-attach resize", "err", err)
 				}
 			}
