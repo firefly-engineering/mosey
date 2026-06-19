@@ -2,302 +2,245 @@
 
 > **Status: design proposal.** Nothing here is implemented yet. This
 > document designs a [ttyd](https://github.com/tsl0922/ttyd)-equivalent:
-> attach to a running `mosey launch` from a web browser, with the
-> browser wallet handling authentication when the session was launched
-> with [wallet support](wallet-auth.md). It reuses the existing
-> [WebSocket transport](transports.md#websocket-backend), the
-> [TypeScript client](../../clients/typescript/), the wallet handshake,
-> and the inline `signMessage` flow — and adds one new component: a
-> **personal, wallet-bound libp2p agent**.
+> attach to a running `mosey launch` from a web browser, with on-chain
+> [wallet auth](wallet-auth.md) deciding what you may attach to. It is a
+> **self-hosted web gateway**: a small service you run that is a full
+> libp2p node *and* a web terminal, reached from your browser over a VPN
+> (Tailscale).
 >
-> An earlier draft of this proposal put a full libp2p node *in the
-> browser* and leaned on transparent relays; it hit a series of walls
-> (browsers can't dial TCP/QUIC, can't be a DCUtR endpoint, and
-> go-libp2p has no relay-signalled WebRTC listener). This revision
-> moves the libp2p node *out* of the browser into a per-user agent,
-> which removes those walls entirely. The superseded analysis is
-> preserved in git history (`docs(web-attach): add browser web-attach
-> design proposal`).
+> This **supersedes** two earlier drafts, preserved in git history:
+> a *browser-as-full-libp2p-node* design (`docs(web-attach): add browser
+> web-attach design proposal`) and a *static-page + personal wallet-bound
+> agent* design (`docs(web-attach): rework around a personal wallet-bound
+> libp2p agent`). Both fought the browser's libp2p limitations and ended
+> up requiring browser-reachable relays. This revision sidesteps all of
+> it by keeping libp2p entirely server-side and solving browser
+> reachability with a VPN instead of relays.
 
 ## The one idea
 
-A browser can't reach a NAT'd `mosey` host directly, and browsers are
-*bad libp2p nodes*: they can't dial TCP/QUIC, can't hole-punch, and
-can't be the listening end of relay-signalled WebRTC against a go-libp2p
-host. Rather than fight that, **don't make the browser a p2p node at
-all.**
+Run a small **web gateway** — one container on a box you control — that
+is simultaneously:
 
-Instead, put a **personal libp2p node between the browser and the
-network** — an *agent* the user runs, **bound to their wallet**. The
-browser is a thin, static web terminal that drives its agent over a
-WebSocket; the agent does all the libp2p (discovery, NAT traversal,
-hole-punching) and runs the mosey wallet handshake against hosts on the
-user's behalf. The browser never speaks libp2p.
+- a **full libp2p node** that dials `mosey` hosts exactly the way
+  `mosey attach` already does, and
+- a **web terminal server** that serves `xterm.js` to your browser.
+
+Your browser reaches the gateway over **Tailscale** (or any VPN); the
+gateway reaches `mosey` sessions over libp2p. The browser never speaks
+libp2p, and **you maintain no relays.**
 
 ```
-   static web terminal (GitHub Pages)        your agent (a node you run)         a mosey host
-   ┌───────────────────────────┐    WSS     ┌────────────────────────────┐      ┌──────────────┐
-   │ • wallet connect (Phantom) │◀─────────▶│ • full libp2p node          │      │ launch       │
-   │ • xterm.js                 │  (drives   │ • wallet-LOCKED ingress (W) │ libp2p│ peer_id ==   │
-   │ • points at YOUR agent     │   agent)   │ • holds W→K_agent delegation│◀────▶│  session_key │
-   │ • no libp2p, stateless     │            │ • DHT resolve + hole-punch  │ + DCUtR└──────┬──────┘
-   └───────────────────────────┘            └────────────────────────────┘             │ (if NAT'd)
-                                                                                         ▼
-                                                                              ┌───────────────────┐
-                                                                              │ host's NAT relay   │
-                                                                              │ (mediation only;   │
-                                                                              │  sees ciphertext)  │
-                                                                              └───────────────────┘
+   browser (roaming)              your web gateway (one container)            a mosey host
+   ┌──────────────────┐  Tailscale ┌─────────────────────────────┐   libp2p   ┌──────────────┐
+   │ • xterm.js        │  HTTPS/WS │ • full libp2p node (≈attach) │  direct,   │ launch       │
+   │ • wallet connect  │◀─────────▶│ • web terminal server        │  or public │ peer_id ==   │
+   │ • no libp2p       │ (private,  │ • runs wallet handshake      │  swarm +   │  session_key │
+   │ • no key storage  │  no public │   to hosts on your behalf    │  DCUtR     │              │
+   └──────────────────┘  exposure) └─────────────────────────────┘◀──────────▶└──────────────┘
 ```
 
-The two tricky hops both land on the **right** side of the browser's
-limitations:
+## Why this removes the relay problem
 
-- **browser ↔ agent** is plain **WSS** — the one thing every browser
-  does well.
-- **agent ↔ host** is **full-node ↔ full-node libp2p** — so DHT
-  discovery, circuit-relay-v2, and **DCUtR hole-punching all work**.
-  The browser's inability to hole-punch is irrelevant; its agent does it.
+Every relay headache in the earlier drafts came from one fact: **the
+browser was the libp2p endpoint, and browsers can't use the normal
+libp2p relay swarm** — they can't dial TCP/QUIC relays, can't hole-punch,
+and go-libp2p has no relay-signalled WebRTC listener for them. So you had
+to stand up *special, browser-reachable* relays and keep them running.
 
-## What this buys (and what it costs)
+Moving the libp2p endpoint to a **full node** (the gateway) dissolves
+that. A full node has the same connectivity `mosey attach` has today:
 
-| | Browser as a full p2p node (superseded) | **Browser drives a personal agent (this proposal)** |
-|---|---|---|
-| Browser | js-libp2p node (WSS/WebRTC/circuit) | thin static WSS terminal, **no libp2p** |
-| Reaching a NAT'd host | relay-signalled WebRTC (**unsupported by go-libp2p**) or stuck always-relayed | **DHT + host's relay + DCUtR → direct** |
-| Hole-punch | impossible (browser can't) | **works** (agent is a full node) |
-| Key material in browser | non-extractable `K_c` + IndexedDB cache | **none** — lives at the agent |
-| Infra the user runs | maybe none | **a personal agent node** (the real cost) |
-| Trust | relays see only ciphertext | the agent (yours) is an endpoint — **sees your plaintext** |
+- **Host on your tailnet / LAN** → the gateway dials it **directly**. No
+  relay, no DHT, no hole-punch.
+- **NAT'd host elsewhere** → reached with mosey's **existing** machinery:
+  the host sits on the **public libp2p relay swarm** (mosey's default
+  bootstrap) for NAT mediation, and the gateway **DCUtR-hole-punches to a
+  direct connection** — identical to `mosey attach`. You run and maintain
+  *none* of that.
 
-The cost is real and worth stating plainly: each user runs an always-on
-agent, and that agent is a *trusted endpoint* for their own sessions (it
-terminates the secure channel, so it sees the PTY plaintext and holds a
-session-access delegation). That is acceptable precisely because **it is
-your own, wallet-locked node** — but it is the defining trade of this
-design. A future fallback could let the static page run as a full
-js-libp2p node for users unwilling to run an agent (see
-[Open questions](#open-questions)).
+So the only thing you operate is the gateway, and **Tailscale** carries
+your browser to it across networks with no public exposure and no TLS
+chores (`tailscale serve` gives you HTTPS + MagicDNS automatically). The
+VPN replaces "expose a public endpoint + manage certs + run relays" with
+"be on your tailnet."
+
+## What it costs
+
+- You **self-host one service** (a container) — but exactly one, and no
+  relays.
+- Access is a **private gateway**, not "open to any browser with your
+  wallet": a client must be on a tailnet that can reach the gateway. That
+  is the deliberate trade for dropping relays and public exposure.
+- The gateway is a **trusted node**: it terminates the connection to
+  hosts (sees PTY plaintext) and uses a wallet delegation to attach. It
+  is *yours*, on *your* box, so that is acceptable — but it is the
+  defining trust boundary (see [Security](#security)).
 
 ## What already exists (and is reused)
 
-| Piece | Status | Role here |
+The gateway is, deliberately, mostly assembled from parts that already
+work:
+
+| Piece | Status | Role in the gateway |
 |---|---|---|
-| WebSocket transport + TS `MoseyClient` | done | the **browser ↔ agent** link reuses it verbatim — the agent serves `/mosey/{auth,pty,control}` to the browser over WSS, exactly what `MoseyClient` + [`xterm-demo.html`](../../clients/typescript/examples/xterm-demo.html) already speak |
-| Wallet handshake (server + client) | done | the **agent ↔ host** auth; the agent is the mosey client, the host is unchanged |
-| Canonical delegation, `signMessage` flow | done | `W → K_agent` delegation; browser→agent login proof |
-| [`walletsolana`](../../walletsolana/) snapshot | done | reused by the agent for chain reads (dashboard, host's relay pointer) |
+| `mosey attach` libp2p client + wallet handshake | done | the gateway's **host-facing** half — it *is* an attacher |
+| WebSocket transport + TS `MoseyClient` | done | the gateway serves `/mosey/{auth,pty,control}` to the **browser** over WS; the browser drives it with the existing `MoseyClient` ([`xterm-demo.html`](../../clients/typescript/examples/xterm-demo.html)) |
+| Canonical delegation + inline `signMessage` | done | the browser signs the delegation the gateway presents to hosts |
+| [`walletsolana`](../../walletsolana/) snapshot | done | chain reads for the session dashboard |
 
-The host side does not change at all: a host is already a libp2p node
-whose `peer_id == session_key`, authenticating attachers with the
-existing wallet handshake. The agent is just another attacher.
+The host side does **not change**: a host is already a libp2p node with
+`peer_id == session_key`, authenticating attachers with the wallet
+handshake. The gateway is just another attacher.
 
-## The static web terminal
+## The browser side
 
-Generic, deploy-once (GitHub Pages or anywhere), and **drops js-libp2p
-entirely**. It is essentially today's `xterm-demo.html` plus wallet
-login:
+A normal web client — **no libp2p, no key storage:**
 
-- **wallet connect** (Phantom / Solflare / Backpack),
-- **WSS to your agent**, authenticated as `W` (below),
+- loads the UI from the gateway over Tailscale HTTPS,
+- **wallet connect** (Phantom / Solflare / Backpack) for authorization,
 - a **session dashboard** (the chain read — see [Discovery](#discovery)),
-- **xterm.js**, driven over the WSS link with the existing `MoseyClient`.
+- `xterm.js`, driven over a WebSocket to the gateway with the existing
+  `MoseyClient`.
 
-It is **stateless**: no connection key, no delegation cache, no IndexedDB
-— those all live at the agent. The page holds nothing but the current
-WSS session.
+The browser holds nothing but the current WS session.
 
-### Pointing the page at your agent
+## Authentication and authorization
 
-The page learns its agent's address by one of, in increasing
-zero-config:
+Two independent gates, and **Tailscale is only the outer one:**
 
-1. **URL fragment** — `#agent=wss://my-agent.example/...`; bookmark it.
-2. **localStorage, per wallet** — entered once, remembered for that wallet.
-3. **On-chain `wallet → agent` record** (optional) — connect `W`, look up
-   `W`'s agent address. "Bound to the wallet" in the strongest sense; the
-   agent address is stable infra, so it sits fine on-chain (small
-   metadata leak — opt-in).
+- **Network perimeter — Tailscale.** Decides *who can reach the gateway*
+  (device-level). It does **not** satisfy a host.
+- **Session authorization — wallet + chain.** A wallet-launched host
+  *demands* a valid delegation to attach, regardless of the network. So
+  on login the browser runs the inline `signMessage` to authorize the
+  gateway, and the gateway presents that to the host. Caps are enforced
+  **at the host** (snapshot ∩ presented chain), unchanged.
 
-Pointing a **public** page at your agent is safe: the agent is
-**wallet-locked**, so a visitor whose wallet isn't `W` is rejected at the
-ingress handshake regardless of knowing the address.
+Concretely, per browser login: the gateway mints an **ephemeral key
+`K`**, the browser wallet signs **`W → K`** once, and the gateway uses
+`K` to attach to that user's sessions for the life of the login,
+discarding it on logout. There is no standing credential — without a
+fresh, scoped `W → K` delegation the gateway's `K` is useless. (This is
+the `K_c` mechanism from the wallet-auth design, held gateway-side per
+login instead of in the browser.)
 
-## The personal agent
-
-A full libp2p node the user runs (a cloud box, or home + dyndns), with a
-**WSS listener carrying a TLS cert** so the browser can reach it. It is
-the wallet-locked relay this proposal kept circling back to — now the
-core component rather than an optional one.
-
-- **Wallet-locked ingress.** On a new browser connection the agent runs a
-  challenge/response: the browser proves control of wallet `W` via a
-  per-login `signMessage` (see [Open questions](#open-questions) for the
-  no-prompt variant). A non-`W` wallet is dropped before anything else —
-  no session is reachable through someone else's agent.
-- **Holds `W`'s delegation.** Once, the user signs `W → K_agent`
-  (delegating to the agent's libp2p key). Thereafter the agent runs the
-  mosey wallet handshake with hosts as an authorized client, with no
-  further wallet prompts.
-- **Reaches hosts as a full node.** It resolves a chosen session via the
-  DHT, dials the host (directly, or through the host's NAT relay), and
-  **DCUtR-upgrades to a direct connection** — then bridges the PTY /
-  control / auth streams to the browser over WSS.
-
-It never serves anyone but `W`, so "lock my relay to my wallet" falls out
-of the ingress check; there is no separate ACL to design.
+This is also what makes the gateway naturally **single- or multi-user**:
+whoever logs in supplies their own delegation, and the gateway attaches
+with *their* on-chain access. A personal gateway just has one user.
 
 ## Discovery
 
-Two layers, and the agent — not the browser — does the hard one.
+- **Which sessions (the menu).** `getProgramAccounts` keyed by the
+  connected wallet — owned (`memcmp(owner, W)`) and granted
+  (`Grant.grantee == W`). The browser or the gateway runs it; it reuses
+  the Solana RPC the project already depends on.
+- **Where the host is.** The **gateway** resolves it like any libp2p
+  node: a tailnet/LAN address directly, or `FindPeer(session_key)` over
+  the DHT (optionally hinted by the host's on-chain `relay` pointer for a
+  NAT'd host). The browser resolves nothing.
 
-- **Which sessions (the menu).** A `getProgramAccounts` read keyed by the
-  connected wallet lists its sessions: owned
-  (`memcmp(owner, W)`) and granted (`Grant.grantee == W`). The browser
-  can do this directly (just needs `W`'s pubkey) or ask the agent. It
-  reuses the Solana RPC the project already depends on — no new
-  third-party dependency, and for chain sessions it is the directory of
-  *which*.
-- **Where the host is (the address).** The **agent** resolves it with
-  full libp2p: `FindPeer(session_key)` over the DHT, plus the host's
-  optional **on-chain `relay` pointer** telling it which NAT relay to
-  route through. The browser resolves nothing.
-
-The host's `relay` pointer is a small **program change** (an optional
-`relay` field on the `Session` account, set at `register` / a new
-`set_relay`). It is legitimate on-chain data because a *relay* is stable
-infra — unlike the host's address, which churns and stays off-chain. So
-the boundary is: **chain = who owns · who may attach · which relay;
-off-chain = the host's current address** (resolved by the agent).
+The host's on-chain `relay` pointer (an optional `Session` field — a
+small program change) matters only for NAT'd-elsewhere hosts that use a
+specific relay; hosts on your tailnet or on the public swarm don't need
+it. The boundary remains: **chain = who owns · who may attach · (which
+relay); off-chain = the host's current address.**
 
 ## Hosts and NAT
 
-A host needs **no inbound reachability and no browser-facing transport**
-— a sharp simplification over the superseded design:
+A host needs **no browser-facing transport and no new inbound** beyond
+what `mosey` already does:
 
-- **Directly reachable host** → the agent dials it directly.
-- **NAT'd host** → it reserves on **its own relay** (AutoRelay /
-  circuit-relay-v2), purely for NAT mediation. The agent reaches it
-  through that relay and then **hole-punches to a direct connection**, so
-  the relay drops out of the data path. Because the agent↔host channel is
-  end-to-end Noise, that NAT relay only ever sees **ciphertext** — it can
-  be shared or public; access is gated end-to-end by the host.
+- **On your tailnet / LAN** → the gateway dials it directly.
+- **NAT'd elsewhere** → it relies on mosey's existing AutoRelay + public
+  swarm for mediation; the gateway hole-punches to direct. The public
+  relay only ever sees **ciphertext** (gateway↔host Noise is end-to-end).
 
-Crucially there is **no 1:1 relay relationship**: the host's NAT relay
-and the user's agent are different nodes that meet via the DHT. A
-grantee's agent reaches your host through *your host's* relay, not
-through your agent.
-
-## Wallet auth, end to end
-
-- **browser → agent:** prove control of `W` (per-login `signMessage`).
-  This is *login to your own agent*, not session access.
-- **agent → host:** the existing mosey wallet handshake, unchanged on the
-  host side. The agent presents the `W → K_agent` delegation (plus any
-  chain the grant requires); the host folds it against its
-  [on-chain snapshot](wallet-auth.md#snapshot-and-freshness) → `Identity`
-  → caps. Replay binding holds: the delegation names `K_agent`, and the
-  handshake binds `K_agent` to the agent↔host connection.
-- **caps are enforced at the host**, from the snapshot ∩ the presented
-  chain, regardless of what the agent or browser requests.
+There is no 1:1 relay relationship and nothing host-specific to provision
+for the web path.
 
 ## Grantees
 
-Each participant runs **their own** wallet-bound agent. A grantee
-connects their wallet → their agent → which attaches to the owner's
-session: the agent holds the grantee's delegation (or relies on the
-grantee's on-chain grant), finds the host via the DHT and the host's NAT
-relay, and hole-punches in. **No shared relay, no 1:1 binding, and a
-grantee never touches the owner's agent.** This is the topology the
-relay-coupling discussion kept pointing at; the agent model delivers it.
+Each participant runs **their own** gateway on **their own** tailnet. A
+grantee connects their wallet to their gateway, which attaches to your
+session over libp2p (direct or public-swarm-mediated); the host
+authorizes them via their **on-chain grant**. They never touch your
+gateway or your tailnet — the same "no shared infra, no 1:1" property as
+the agent model, with even less to run.
 
 ## Security
 
-- **The agent is a trusted, sensitive node.** It terminates the secure
-  channel (sees your PTY plaintext) and holds `W`'s session-access
-  delegation. It is *yours*, so that is acceptable — but treat it like
-  any credentialed agent: **scope the delegation** (short `not-after`,
-  refreshed; least caps), sandbox the process, and keep the wallet-locked
-  ingress on.
-- **The host's NAT relay sees only ciphertext** (agent↔host Noise is
-  end-to-end), so it can be untrusted / shared.
-- **Session authenticity is transport-proven.** `peer_id == session_key`;
-  Noise proves the agent reached the real session.
-- **The static page is a fixed public bundle** holding no secrets; it is
-  safe to point at a wallet-locked agent because non-`W` is rejected.
-- **TLS** is mandatory on the agent's WSS listener (browser requirement).
+- **The gateway is a trusted node** (yours): it sees your PTY plaintext
+  and wields `W → K`. Keep `K` ephemeral-per-login, keep the `W → K`
+  delegation **short-lived and least-cap**, and sandbox the container.
+- **Session authenticity is transport-proven** — `peer_id ==
+  session_key`, Noise proves the gateway reached the real session.
+- **Caps are enforced at the host**, not the gateway or browser.
+- **Defense in depth:** Tailscale gates the device, the wallet gates the
+  session; neither alone is the whole story.
+- **Public relays (when used) see only ciphertext.**
 
 ## Where it plugs into the code
 
-- `cmd/mosey/agent.go` (**new**) — the personal agent: a full libp2p node
-  with a wallet-locked WSS ingress (challenge/response on `W`), a held
-  `W → K_agent` delegation, DHT/`relay`-pointer resolution, host dial +
-  DCUtR, and a bridge from the host's `/mosey/{auth,pty,control}` streams
-  to the browser's WSS. Reuses [`walletsolana`](../../walletsolana/) for
-  chain reads.
-- `webui/` (**new**) — the static thin terminal: wallet connect + ingress
-  login + dashboard + xterm over the existing `MoseyClient` WSS path. No
-  libp2p, no key storage. An esbuild bundle; deploy to GitHub Pages.
-- [`programs/mosey-session`](../../programs/) — optional `relay` field on
-  `Session` (set at `register_session` / a new owner-only `set_relay`);
-  optional `wallet → agent` record for zero-config pointing.
+- `cmd/mosey/web.go` (**new**) — `mosey web`: the gateway. Reuses the
+  [`attach`](../../attach/) libp2p client + wallet handshake to reach
+  hosts, and serves an HTTP/WS endpoint (UI + the `/mosey/*` streams) to
+  the browser. Mints `K` per login and runs the host handshake with the
+  browser-supplied `W → K`.
+- `webui/` (**new**) — the web UI (xterm + wallet connect + dashboard),
+  served by `mosey web`. Browser↔gateway reuses `MoseyClient`'s WebSocket
+  transport as-is; new code is only wallet-login + dashboard glue.
+- [`clients/typescript`](../../clients/typescript/) — the
+  browser-side login/dashboard glue; the transport layer is unchanged.
 - [`walletsolana`](../../walletsolana/) — owner/grantee-indexed
-  `getProgramAccounts` for the dashboard; decode the new `relay` field.
-- [`transport/libp2p`](../../transport/libp2p/) — host side: ensure the
-  host is DHT-discoverable and (if NAT'd) reserves on its relay; surface
-  the dial info. (Largely already present via AutoRelay.)
-- [`clients/typescript`](../../clients/typescript/) — the browser↔agent
-  link reuses `MoseyClient`'s WebSocket transport as-is; new code is only
-  the wallet-connect + agent-login glue and the dashboard.
-- Docs — this file; a `mosey agent` entry in [the CLI surface](cli.md).
+  `getProgramAccounts` for the dashboard.
+- [`programs/mosey-session`](../../programs/) — *optional* `relay` field
+  on `Session` (only for NAT'd-elsewhere hosts pinned to a relay).
+- **Deployment** — a `Dockerfile` for `mosey web` and a short runbook for
+  `tailscale serve` (HTTPS + MagicDNS); `Headscale` noted for a
+  no-third-party tailnet.
 
-Note what this design **drops** versus the superseded one: js-libp2p in
-the browser, browser-side `K_c` + IndexedDB, and all the
-WebRTC/transparent-relay machinery.
+What this design **drops** versus the superseded drafts: js-libp2p in the
+browser, browser-side `K_c` + IndexedDB, all WebRTC/transparent-relay
+machinery, and any user-maintained relays.
 
 ## Phasing
 
 ```
-P0  ── Agent + thin terminal against a reachable host ────────────────
-      mosey agent: wallet-locked WSS ingress → bridge to a directly
-        reachable host over libp2p
-      static terminal: wallet login + xterm over MoseyClient (WSS)
-      ✦ open the page → log in with your wallet → a terminal
+P0  ── Gateway against a reachable host ──────────────────────────────
+      mosey web: libp2p attach to a tailnet/LAN host + serve xterm/WS
+      browser: wallet login (W→K) + xterm over MoseyClient
+      reach it over Tailscale
+      ✦ open the page on your tailnet → wallet login → a terminal
 
-P1  ── NAT traversal ─────────────────────────────────────────────────
-      agent: DHT FindPeer + reach a NAT'd host via its relay + DCUtR
-      host: reserve on its NAT relay (mediation only)
-      ✦ reach a host with zero inbound reachability — direct after holepunch
+P1  ── Hosts elsewhere ───────────────────────────────────────────────
+      gateway inherits attach's public-swarm + DCUtR path to NAT'd hosts
+      ✦ reach a session running anywhere, no relays you maintain
 
 P2  ── Chain-driven discovery ────────────────────────────────────────
-      Session.relay pointer (program change); wallet dashboard
-      optional on-chain wallet→agent record; relay-pointer routing
-      ✦ connect wallet → pick a terminal, zero manual addressing
+      wallet dashboard (which sessions); optional Session.relay pointer
+      ✦ connect wallet → pick a terminal
 
 P3  ── Multi-party + ergonomics ──────────────────────────────────────
-      grantee flows end to end; delegation scope/refresh at the agent
-      optional Model-1 (browser-as-full-node) fallback for agent-less viewers
+      grantee flows; multi-user gateway; reconnect / pty-resume in the UI
 ```
 
-P0 needs no NAT traversal and no chain — just the agent bridging to a
-reachable host, with the browser reusing the existing WSS client. Each
-later phase is additive.
+P0 is small — it is `mosey attach` to a reachable host with a web
+front-end, behind your VPN. Everything after is additive.
 
 ## Open questions
 
-- **browser → agent login.** Per-login wallet `signMessage` (chosen for
-  P0 — simplest) vs. a stored `W → K_browser` delegation that avoids a
-  prompt on every login (browser regains a little state). Revisit if the
-  per-login prompt grates.
-- **Pointing the page at the agent.** URL fragment / localStorage /
-  on-chain `wallet → agent` record — which to default to, and whether to
-  add the on-chain record at all (it leaks the agent's location).
-- **Agent delegation scope.** Caps + `not-after` for `W → K_agent`, and
-  the refresh cadence — the agent is a standing credential, so this is the
-  main blast-radius control.
-- **Agent-less viewers.** A casual one-off viewer may not want to run an
-  agent. Options: a Model-1 (browser-as-full-node) fallback path in the
-  same static page, or a shared/trusted agent. Deferred; both are real
-  work.
-- **Agent vs host-relay overlap.** Whether one node can serve both roles
-  in small deployments, or they stay separate by default.
+- **Single- vs multi-user gateway.** Personal (one wallet) is the default;
+  multi-user falls out of per-login `W → K`, but session isolation and
+  resource limits in a shared gateway need design.
+- **`W → K` scope + refresh.** Caps and `not-after`, and whether a long
+  session silently re-prompts the wallet on expiry.
+- **VPN choice.** Tailscale is the assumed default (`tailscale serve` for
+  HTTPS); document Headscale for self-hosting the control plane, and the
+  generic "any reverse-proxy/VPN that fronts the gateway" path.
+- **Is `Session.relay` worth keeping?** Tailnet + public swarm cover most
+  hosts; the on-chain relay pointer may not earn its program change.
+- **Agent-less is already true here** — but the old "open to any browser
+  with your wallet" reach is what we gave up; revisit if a
+  no-VPN/public-gateway tier is ever wanted (it reintroduces the public
+  exposure this design removed).
