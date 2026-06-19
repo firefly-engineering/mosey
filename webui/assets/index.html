@@ -26,9 +26,21 @@
         border-bottom: 1px solid #373b41;
         font-size: 0.85rem;
       }
+      header button {
+        font: inherit;
+        padding: 0.3rem 0.6rem;
+        border-radius: 4px;
+        border: 1px solid #373b41;
+        background: #1d1f21;
+        color: inherit;
+        cursor: pointer;
+      }
       #status {
         margin-left: auto;
         color: #969896;
+      }
+      .err {
+        color: #cc6666;
       }
       #terminal {
         height: calc(100vh - 44px);
@@ -39,16 +51,17 @@
   <body>
     <header>
       <strong>mosey</strong>
-      <span id="target"></span>
-      <span id="status">connecting…</span>
+      <span id="session"></span>
+      <span id="wallets"></span>
+      <span id="status">starting…</span>
     </header>
     <div id="terminal"></div>
 
     <script type="module">
-      // P0: a thin terminal-over-WebSocket protocol between the browser
-      // and the gateway. Binary frames carry PTY bytes both ways; a JSON
-      // text frame {type:"resize",cols,rows} carries size changes. The
-      // gateway does all the libp2p + mosey-auth work behind this socket.
+      // The gateway does all libp2p + mosey-auth work. The browser is a
+      // thin terminal over a WebSocket. In wallet-login mode it first runs
+      // an inline signMessage flow (prepare → sign → callback) to authorize
+      // the gateway, then opens the socket with the resulting token.
       const { Terminal } = await import(
         "https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/+esm"
       );
@@ -57,7 +70,34 @@
       );
 
       const statusEl = document.getElementById("status");
-      const setStatus = (s) => (statusEl.textContent = s);
+      const setStatus = (s, cls) => {
+        statusEl.textContent = s;
+        statusEl.className = cls || "";
+      };
+
+      // --- base58 (matches wallet signMessage return / Go EncodeBase58)
+      const ALPHABET =
+        "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+      const b58 = (bytes) => {
+        let n = 0n;
+        for (const b of bytes) n = n * 256n + BigInt(b);
+        let o = "";
+        while (n > 0n) {
+          o = ALPHABET[Number(n % 58n)] + o;
+          n /= 58n;
+        }
+        for (const b of bytes) {
+          if (b !== 0) break;
+          o = "1" + o;
+        }
+        return o || "1";
+      };
+      const hexToBytes = (h) => {
+        const a = new Uint8Array(h.length / 2);
+        for (let i = 0; i < a.length; i++)
+          a[i] = parseInt(h.slice(i * 2, i * 2 + 2), 16);
+        return a;
+      };
 
       const term = new Terminal({
         cursorBlink: true,
@@ -69,40 +109,132 @@
       term.open(document.getElementById("terminal"));
       fit.fit();
 
-      const wsURL = new URL("ws", location.href);
-      wsURL.protocol = location.protocol === "https:" ? "wss:" : "ws:";
-      const ws = new WebSocket(wsURL);
-      ws.binaryType = "arraybuffer";
+      function connect(token) {
+        const wsURL = new URL("ws", location.href);
+        wsURL.protocol = location.protocol === "https:" ? "wss:" : "ws:";
+        if (token) wsURL.searchParams.set("token", token);
+        const ws = new WebSocket(wsURL);
+        ws.binaryType = "arraybuffer";
+        const enc = new TextEncoder();
+        const sendResize = () => {
+          if (ws.readyState !== WebSocket.OPEN) return;
+          ws.send(
+            JSON.stringify({ type: "resize", cols: term.cols, rows: term.rows }),
+          );
+        };
+        ws.addEventListener("open", () => {
+          setStatus("connected");
+          sendResize();
+        });
+        ws.addEventListener("message", (ev) => {
+          if (typeof ev.data === "string") return;
+          term.write(new Uint8Array(ev.data));
+        });
+        ws.addEventListener("close", () => setStatus("disconnected"));
+        ws.addEventListener("error", () => setStatus("error", "err"));
+        term.onData((s) => {
+          if (ws.readyState === WebSocket.OPEN) ws.send(enc.encode(s));
+        });
+        term.onResize(sendResize);
+        window.addEventListener("resize", () => {
+          fit.fit();
+          sendResize();
+        });
+      }
 
-      const enc = new TextEncoder();
-      const dec = new TextDecoder();
-
-      const sendResize = () => {
-        if (ws.readyState !== WebSocket.OPEN) return;
-        ws.send(
-          JSON.stringify({ type: "resize", cols: term.cols, rows: term.rows }),
+      // Detect each wallet by its own injected global (only one can own
+      // window.solana), so the user can pick which one signs.
+      function detectWallets() {
+        const out = [],
+          seen = new Set();
+        const add = (name, p) => {
+          if (p && !seen.has(p)) {
+            seen.add(p);
+            out.push({ name, p });
+          }
+        };
+        add("Phantom", window.phantom?.solana);
+        add("Solflare", window.solflare);
+        add(
+          "Backpack",
+          window.backpack?.solana ??
+            (window.backpack?.isBackpack ? window.backpack : null),
         );
-      };
+        return out;
+      }
 
-      ws.addEventListener("open", () => {
-        setStatus("connected");
-        sendResize();
-      });
-      ws.addEventListener("message", (ev) => {
-        if (typeof ev.data === "string") return; // reserved for control
-        term.write(new Uint8Array(ev.data));
-      });
-      ws.addEventListener("close", () => setStatus("disconnected"));
-      ws.addEventListener("error", () => setStatus("error"));
+      async function walletLogin(session) {
+        document.getElementById("session").textContent = "· " + session.slice(0, 8) + "…";
+        const walletsEl = document.getElementById("wallets");
 
-      term.onData((s) => {
-        if (ws.readyState === WebSocket.OPEN) ws.send(enc.encode(s));
-      });
-      term.onResize(() => sendResize());
-      window.addEventListener("resize", () => {
-        fit.fit();
-        sendResize();
-      });
+        async function signIn(provider) {
+          try {
+            setStatus("connecting wallet…");
+            const resp = await provider.connect();
+            const addr = (resp?.publicKey ?? provider.publicKey).toString();
+
+            const prep = await fetch("login/prepare", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ wallet: addr, caps: "write, resize" }),
+            });
+            if (!prep.ok) {
+              setStatus("prepare failed: " + (await prep.text()), "err");
+              return;
+            }
+            const { token, content_hex } = await prep.json();
+            const content = hexToBytes(content_hex);
+
+            setStatus("approve the delegation in your wallet…");
+            const res = await provider.signMessage(content, "utf8");
+            const sig = res.signature ?? res;
+
+            const cb = await fetch("login/callback", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ token, signature_base58: b58(sig) }),
+            });
+            if (!cb.ok) {
+              setStatus("callback failed: " + (await cb.text()), "err");
+              return;
+            }
+            walletsEl.textContent = "";
+            connect(token);
+          } catch (e) {
+            setStatus("error: " + (e?.message ?? e), "err");
+          }
+        }
+
+        function render() {
+          const found = detectWallets();
+          walletsEl.innerHTML = "";
+          if (!found.length) {
+            setStatus("no Solana wallet found (Phantom / Solflare / Backpack)", "err");
+            return;
+          }
+          setStatus("sign in to attach");
+          for (const { name, p } of found) {
+            const btn = document.createElement("button");
+            btn.textContent = "Sign in · " + name;
+            btn.onclick = () => signIn(p);
+            walletsEl.appendChild(btn);
+          }
+        }
+        render();
+        setTimeout(render, 600); // extensions inject asynchronously
+      }
+
+      // Boot: ask the gateway which auth flow to run.
+      try {
+        const cfg = await (await fetch("config")).json();
+        if (cfg.mode === "wallet") {
+          await walletLogin(cfg.session);
+        } else {
+          connect(); // static auth: gateway holds the credential
+        }
+      } catch (e) {
+        setStatus("config error: " + (e?.message ?? e), "err");
+      }
     </script>
   </body>
 </html>

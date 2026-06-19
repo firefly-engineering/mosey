@@ -1,7 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -18,6 +23,7 @@ import (
 	"github.com/firefly-engineering/mosey/auth"
 	unixbackend "github.com/firefly-engineering/mosey/transport/unix"
 	"github.com/firefly-engineering/mosey/vterm"
+	"github.com/firefly-engineering/mosey/wallet"
 )
 
 // TestWebGateway_BridgeRoundTrip stands up an in-process vterm host
@@ -62,9 +68,10 @@ func TestWebGateway_BridgeRoundTrip(t *testing.T) {
 	}
 	defer func() { _ = gwClient.Close() }()
 	gw := &webGateway{
-		transport: auth.Wrap(gwClient, psk),
-		target:    endpoints[0],
-		logger:    newLogger(os.Stderr, "error"),
+		staticTransport: auth.Wrap(gwClient, psk),
+		target:          endpoints[0],
+		logger:          newLogger(os.Stderr, "error"),
+		logins:          map[string]*loginSession{},
 	}
 
 	srv := httptest.NewServer(gw.mux())
@@ -128,4 +135,155 @@ func TestWebGateway_BridgeRoundTrip(t *testing.T) {
 	got := out.String()
 	mu.Unlock()
 	t.Fatalf("did not observe echoed input; got %.200q", got)
+}
+
+// TestWebGateway_WalletLoginRoundTrip exercises the --wallet-login flow
+// end to end with a local key standing in for the browser wallet: the
+// gateway mints K and renders the W→K delegation (prepare), the "wallet"
+// signs the canonical content (signMessage), the gateway verifies it
+// (callback) and attaches to a wallet-auth host with that delegation.
+func TestWebGateway_WalletLoginRoundTrip(t *testing.T) {
+	mkKey := func() ed25519.PrivateKey {
+		_, k, err := ed25519.GenerateKey(rand.Reader)
+		if err != nil {
+			t.Fatalf("gen key: %v", err)
+		}
+		return k
+	}
+	pub := func(p ed25519.PrivateKey) ed25519.PublicKey { return p.Public().(ed25519.PublicKey) }
+
+	session := mkKey()
+	sessionID := pub(session)
+	owner := mkKey() // stands in for the browser wallet W
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+
+	// Wallet-auth host: W owns the session; runs `cat`.
+	src := wallet.NewMemSource(wallet.NewMemSnapshot(pub(owner)))
+	serverAuth, err := auth.NewWalletServerAuth(auth.ServerOptions{SessionKey: session, Source: src})
+	if err != nil {
+		t.Fatalf("server auth: %v", err)
+	}
+	sock := filepath.Join("/tmp", fmt.Sprintf("mosey-web-wl-%d.sock", os.Getpid()))
+	defer func() { _ = os.Remove(sock) }()
+	hostBackend, err := unixbackend.New(ctx, unixbackend.Options{ListenAddr: sock})
+	if err != nil {
+		t.Fatalf("host backend: %v", err)
+	}
+	defer func() { _ = hostBackend.Close() }()
+	hostAuthed := auth.Wrap(hostBackend, serverAuth)
+	hostAuthed.Serve()
+	ready := make(chan struct{})
+	go func() { _ = vterm.Run(ctx, vterm.Options{Transport: hostAuthed, Ready: ready}, []string{"cat"}) }()
+	<-ready
+	endpoints := hostBackend.Endpoints()
+	if len(endpoints) == 0 {
+		t.Fatal("host published no endpoints")
+	}
+
+	// Gateway in wallet-login mode: raw (unwrapped) client transport,
+	// session = the host's session key.
+	gwClient, err := unixbackend.New(ctx, unixbackend.Options{})
+	if err != nil {
+		t.Fatalf("gateway client backend: %v", err)
+	}
+	defer func() { _ = gwClient.Close() }()
+	gw := &webGateway{
+		raw:           gwClient,
+		walletLogin:   true,
+		sessionKey:    sessionID,
+		delegationTTL: time.Hour,
+		target:        endpoints[0],
+		logger:        newLogger(os.Stderr, "error"),
+		logins:        map[string]*loginSession{},
+	}
+	srv := httptest.NewServer(gw.mux())
+	defer srv.Close()
+
+	postJSON := func(path string, body any) map[string]string {
+		buf, _ := json.Marshal(body)
+		resp, err := http.Post(srv.URL+path, "application/json", bytes.NewReader(buf))
+		if err != nil {
+			t.Fatalf("POST %s: %v", path, err)
+		}
+		defer func() { _ = resp.Body.Close() }()
+		if resp.StatusCode != http.StatusOK {
+			b, _ := io.ReadAll(resp.Body)
+			t.Fatalf("POST %s = %d: %s", path, resp.StatusCode, b)
+		}
+		var out map[string]string
+		_ = json.NewDecoder(resp.Body).Decode(&out)
+		return out
+	}
+
+	// /config reports wallet mode + the session.
+	cfgResp, err := http.Get(srv.URL + "/config")
+	if err != nil {
+		t.Fatalf("GET /config: %v", err)
+	}
+	var cfg map[string]string
+	_ = json.NewDecoder(cfgResp.Body).Decode(&cfg)
+	_ = cfgResp.Body.Close()
+	if cfg["mode"] != "wallet" || cfg["session"] != wallet.Address(sessionID) {
+		t.Fatalf("/config = %v, want wallet mode + session %s", cfg, wallet.Address(sessionID))
+	}
+
+	// Browser: prepare → sign → callback.
+	prep := postJSON("/login/prepare", map[string]string{
+		"wallet": wallet.Address(pub(owner)),
+		"caps":   "write, resize",
+	})
+	content, err := hex.DecodeString(prep["content_hex"])
+	if err != nil || len(content) == 0 {
+		t.Fatalf("bad content_hex: %v", err)
+	}
+	sig := ed25519.Sign(owner, content)
+	cb := postJSON("/login/callback", map[string]string{
+		"token":            prep["token"],
+		"signature_base58": wallet.EncodeBase58(sig),
+	})
+	if cb["status"] != "ok" {
+		t.Fatalf("callback status = %q", cb["status"])
+	}
+
+	// Attach over the authorized WS.
+	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http") + "/ws?token=" + prep["token"]
+	conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	if err != nil {
+		t.Fatalf("ws dial: %v", err)
+	}
+	defer func() { _ = conn.Close() }()
+
+	var mu sync.Mutex
+	var out strings.Builder
+	go func() {
+		for {
+			mt, data, err := conn.ReadMessage()
+			if err != nil {
+				return
+			}
+			if mt == websocket.BinaryMessage {
+				mu.Lock()
+				out.Write(data)
+				mu.Unlock()
+			}
+		}
+	}()
+	_ = conn.WriteMessage(websocket.TextMessage, []byte(`{"type":"resize","cols":80,"rows":24}`))
+	if err := conn.WriteMessage(websocket.BinaryMessage, []byte("hello-wallet\n")); err != nil {
+		t.Fatalf("ws write: %v", err)
+	}
+
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		mu.Lock()
+		got := out.String()
+		mu.Unlock()
+		if strings.Contains(got, "hello-wallet") {
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatal("did not observe echoed input over the wallet-login session")
 }
