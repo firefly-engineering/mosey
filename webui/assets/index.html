@@ -104,9 +104,20 @@
         return a;
       };
 
+      // Nerd-font glyphs (powerline arrows, icons) live in Unicode
+      // private-use areas, so the terminal needs a font that ships them.
+      // We name common nerd-font families: if one is installed locally
+      // (it is, for a nerd-font shell) the browser uses it. Override with
+      // ?font=<Family Name> for a specific install.
+      const fontOverride = new URLSearchParams(location.search).get("font");
+      const fontFamily =
+        (fontOverride ? `"${fontOverride}", ` : "") +
+        `"MesloLGS NF", "FiraCode Nerd Font", "JetBrainsMono Nerd Font", ` +
+        `"Hack Nerd Font", "Symbols Nerd Font Mono", ui-monospace, Menlo, Monaco, monospace`;
       const term = new Terminal({
         cursorBlink: true,
         convertEol: false,
+        fontFamily,
         theme: { background: "#1d1f21", foreground: "#c5c8c6" },
       });
       const fit = new FitAddon();
