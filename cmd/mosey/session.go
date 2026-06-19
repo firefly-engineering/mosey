@@ -139,10 +139,13 @@ func runSessionRegister(args []string, stdout, stderr *os.File) int {
 	if owner == nil {
 		return code
 	}
-	sessionKey, err := loadHexKey(c.sessionKey)
+	sessionKey, created, err := loadOrCreateHexKey(c.sessionKey)
 	if err != nil {
 		fmt.Fprintln(stderr, "mosey session register: --wallet-session-key:", err)
 		return 2
+	}
+	if created {
+		fmt.Fprintf(stderr, "mosey session register: generated new session key at %s\n", c.sessionKey)
 	}
 	src, err := c.source(sessionKey.Public().(ed25519.PublicKey))
 	if err != nil {

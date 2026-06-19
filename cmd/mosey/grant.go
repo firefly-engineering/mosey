@@ -129,6 +129,33 @@ func runGrant(args []string, stdout, stderr *os.File) int {
 	return 0
 }
 
+// loadOrCreateHexKey loads a hex Ed25519 private key from path, or
+// generates and persists one (0600, creating parent dirs) if the file
+// does not exist. The reported bool is true when a key was generated.
+// Same on-disk form as `mosey launch`, so a key created here is reused
+// unchanged by launch / attach.
+func loadOrCreateHexKey(path string) (key ed25519.PrivateKey, created bool, err error) {
+	key, err = loadHexKey(path)
+	if err == nil {
+		return key, false, nil
+	}
+	if !errors.Is(err, os.ErrNotExist) {
+		return nil, false, err
+	}
+	if _, key, err = ed25519.GenerateKey(rand.Reader); err != nil {
+		return nil, false, err
+	}
+	if dir := filepath.Dir(path); dir != "" {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			return nil, false, err
+		}
+	}
+	if err := os.WriteFile(path, []byte(hex.EncodeToString(key)+"\n"), 0o600); err != nil {
+		return nil, false, err
+	}
+	return key, true, nil
+}
+
 func loadHexKey(path string) (ed25519.PrivateKey, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
