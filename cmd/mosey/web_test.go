@@ -465,3 +465,90 @@ func TestWebGateway_OffchainGrant(t *testing.T) {
 		t.Errorf("caps = %v, want write|resize", fields.Caps)
 	}
 }
+
+type fakeGovernor struct {
+	owner, session, newOwner ed25519.PublicKey
+	submitted                []byte
+	tx                       []byte
+	sig                      string
+}
+
+func (f *fakeGovernor) BuildTransferOwnership(_ context.Context, owner, session, newOwner ed25519.PublicKey) ([]byte, error) {
+	f.owner, f.session, f.newOwner = owner, session, newOwner
+	return f.tx, nil
+}
+func (f *fakeGovernor) BuildGrant(_ context.Context, owner, session, grantee ed25519.PublicKey, caps uint8, expiry int64) ([]byte, error) {
+	return f.tx, nil
+}
+func (f *fakeGovernor) BuildBumpEpoch(_ context.Context, owner, session ed25519.PublicKey) ([]byte, error) {
+	return f.tx, nil
+}
+func (f *fakeGovernor) SubmitSigned(_ context.Context, tx []byte) (string, error) {
+	f.submitted = tx
+	return f.sig, nil
+}
+
+// TestWebGateway_Govern checks the on-chain governance endpoints route to
+// the governor and pass the bytes through (browser signing is verified on
+// devnet, not here).
+func TestWebGateway_Govern(t *testing.T) {
+	mk := func() ed25519.PublicKey {
+		p, _, err := ed25519.GenerateKey(rand.Reader)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	owner, session, newOwner := mk(), mk(), mk()
+	fg := &fakeGovernor{tx: []byte("UNSIGNED-TX"), sig: "SIG123"}
+	gw := &webGateway{
+		walletLogin:  true,
+		multiSession: true,
+		gov:          fg,
+		logger:       newLogger(os.Stderr, "error"),
+		logins:       map[string]*loginSession{},
+		grants:       map[string]*pendingGrant{},
+	}
+	srv := httptest.NewServer(gw.mux())
+	defer srv.Close()
+
+	post := func(path string, body any) map[string]string {
+		buf, _ := json.Marshal(body)
+		resp, err := http.Post(srv.URL+path, "application/json", bytes.NewReader(buf))
+		if err != nil {
+			t.Fatalf("POST %s: %v", path, err)
+		}
+		defer func() { _ = resp.Body.Close() }()
+		if resp.StatusCode != http.StatusOK {
+			b, _ := io.ReadAll(resp.Body)
+			t.Fatalf("POST %s = %d: %s", path, resp.StatusCode, b)
+		}
+		var out map[string]string
+		_ = json.NewDecoder(resp.Body).Decode(&out)
+		return out
+	}
+
+	build := post("/govern/build", map[string]any{
+		"op":        "transfer",
+		"wallet":    wallet.Address(owner),
+		"session":   wallet.Address(session),
+		"new_owner": wallet.Address(newOwner),
+	})
+	tx, err := base64.StdEncoding.DecodeString(build["tx_base64"])
+	if err != nil || string(tx) != "UNSIGNED-TX" {
+		t.Fatalf("build tx = %q (err %v), want UNSIGNED-TX", tx, err)
+	}
+	if !fg.owner.Equal(owner) || !fg.session.Equal(session) || !fg.newOwner.Equal(newOwner) {
+		t.Fatal("governor received wrong transfer args")
+	}
+
+	sub := post("/govern/submit", map[string]string{
+		"tx_base64": base64.StdEncoding.EncodeToString([]byte("SIGNED-TX")),
+	})
+	if sub["signature"] != "SIG123" {
+		t.Fatalf("submit signature = %q, want SIG123", sub["signature"])
+	}
+	if string(fg.submitted) != "SIGNED-TX" {
+		t.Fatalf("governor submitted %q, want SIGNED-TX", fg.submitted)
+	}
+}

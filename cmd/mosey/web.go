@@ -151,6 +151,7 @@ func runWeb(args []string, stderr *os.File) int {
 			}
 			gw.multiSession = true
 			gw.lister = src
+			gw.gov = src
 		} else {
 			sessionKey, err := wallet.ParseAddress(*session)
 			if err != nil {
@@ -205,6 +206,7 @@ type webGateway struct {
 	walletLogin   bool
 	multiSession  bool          // dial the browser-chosen session, not g.target
 	lister        sessionLister // dashboard chain reads; nil disables /sessions
+	gov           governor      // on-chain governance; nil disables /govern/*
 	sessionKey    ed25519.PublicKey
 	delegationTTL time.Duration
 
@@ -225,6 +227,10 @@ func (g *webGateway) mux() http.Handler {
 	}
 	if g.lister != nil {
 		mux.HandleFunc("/sessions", g.handleSessions)
+	}
+	if g.gov != nil {
+		mux.HandleFunc("/govern/build", g.handleGovernBuild)
+		mux.HandleFunc("/govern/submit", g.handleGovernSubmit)
 	}
 	mux.Handle("/", http.FileServer(http.FS(webui.FS())))
 	return mux

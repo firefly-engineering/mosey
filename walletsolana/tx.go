@@ -13,7 +13,6 @@ import (
 	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/base64"
-	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -325,33 +324,10 @@ func (s *Source) RegisterSession(ctx context.Context, owner, sessionKey ed25519.
 // Grant submits grant(grantee, caps, expiry), owner-signed. sessionKey
 // identifies the session whose grant table is updated.
 func (s *Source) Grant(ctx context.Context, owner ed25519.PrivateKey, sessionKey, grantee ed25519.PublicKey, caps wallet8, expiry int64) (string, error) {
-	prog, err := s.programPubkey()
-	if err != nil {
-		return "", err
-	}
 	ownerPub := toPubkey(owner.Public().(ed25519.PublicKey))
-	sessionAddr, _, err := s.sessionPDA(sessionKey)
+	ix, err := s.grantIx(ownerPub, sessionKey, grantee, uint8(caps), expiry)
 	if err != nil {
 		return "", err
-	}
-	grantAddr, _, err := s.grantPDA(sessionAddr, grantee)
-	if err != nil {
-		return "", err
-	}
-	disc := ixDiscriminator("grant")
-	data := append([]byte(nil), disc[:]...)
-	data = append(data, grantee...)                               // grantee: Pubkey (32)
-	data = append(data, byte(caps))                               // caps: u8
-	data = binary.LittleEndian.AppendUint64(data, uint64(expiry)) // expiry: i64 LE
-	ix := instruction{
-		programID: prog,
-		accounts: []accountMeta{
-			{key: sessionAddr, isSigner: false, writable: false},
-			{key: grantAddr, isSigner: false, writable: true},
-			{key: ownerPub, isSigner: true, writable: true},
-			{key: systemProgramID, isSigner: false, writable: false},
-		},
-		data: data,
 	}
 	return s.submit(ctx, ownerPub, []instruction{ix}, map[pubkey]ed25519.PrivateKey{ownerPub: owner})
 }
@@ -359,25 +335,10 @@ func (s *Source) Grant(ctx context.Context, owner ed25519.PrivateKey, sessionKey
 // TransferOwnership submits transfer_ownership(new_owner), owner-signed.
 // sessionKey identifies the session whose owner field is updated.
 func (s *Source) TransferOwnership(ctx context.Context, owner ed25519.PrivateKey, sessionKey, newOwner ed25519.PublicKey) (string, error) {
-	prog, err := s.programPubkey()
-	if err != nil {
-		return "", err
-	}
 	ownerPub := toPubkey(owner.Public().(ed25519.PublicKey))
-	sessionAddr, _, err := s.sessionPDA(sessionKey)
+	ix, err := s.transferOwnershipIx(ownerPub, sessionKey, newOwner)
 	if err != nil {
 		return "", err
-	}
-	disc := ixDiscriminator("transfer_ownership")
-	data := append([]byte(nil), disc[:]...)
-	data = append(data, newOwner...) // new_owner: Pubkey (32)
-	ix := instruction{
-		programID: prog,
-		accounts: []accountMeta{
-			{key: sessionAddr, isSigner: false, writable: true},
-			{key: ownerPub, isSigner: true, writable: true},
-		},
-		data: data,
 	}
 	return s.submit(ctx, ownerPub, []instruction{ix}, map[pubkey]ed25519.PrivateKey{ownerPub: owner})
 }
@@ -385,23 +346,10 @@ func (s *Source) TransferOwnership(ctx context.Context, owner ed25519.PrivateKey
 // BumpEpoch submits bump_epoch — a one-transaction mass-revoke that
 // invalidates every grant stamped with the prior epoch. Owner-signed.
 func (s *Source) BumpEpoch(ctx context.Context, owner ed25519.PrivateKey, sessionKey ed25519.PublicKey) (string, error) {
-	prog, err := s.programPubkey()
-	if err != nil {
-		return "", err
-	}
 	ownerPub := toPubkey(owner.Public().(ed25519.PublicKey))
-	sessionAddr, _, err := s.sessionPDA(sessionKey)
+	ix, err := s.bumpEpochIx(ownerPub, sessionKey)
 	if err != nil {
 		return "", err
-	}
-	disc := ixDiscriminator("bump_epoch")
-	ix := instruction{
-		programID: prog,
-		accounts: []accountMeta{
-			{key: sessionAddr, isSigner: false, writable: true},
-			{key: ownerPub, isSigner: true, writable: true},
-		},
-		data: append([]byte(nil), disc[:]...),
 	}
 	return s.submit(ctx, ownerPub, []instruction{ix}, map[pubkey]ed25519.PrivateKey{ownerPub: owner})
 }

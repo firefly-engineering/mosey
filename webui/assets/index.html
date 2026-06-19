@@ -54,6 +54,7 @@
       <span id="session"></span>
       <span id="wallets"></span>
       <button id="grant" style="display: none">Grant access…</button>
+      <button id="manage" style="display: none">Manage…</button>
       <span id="status">starting…</span>
     </header>
     <div id="terminal"></div>
@@ -198,6 +199,10 @@
         document.getElementById("picker")?.remove();
         active = { provider, addr, session };
         document.getElementById("grant").style.display = "";
+        // On-chain governance is wired only in multi-session mode (the
+        // gateway has an RPC + program), which is exactly when a session
+        // was picked here.
+        document.getElementById("manage").style.display = session ? "" : "none";
         connect(token);
       }
 
@@ -250,6 +255,66 @@
         }
       }
       document.getElementById("grant").addEventListener("click", grantAccess);
+
+      // govern: on-chain governance — the gateway builds the unsigned
+      // transaction, the wallet signs it (web3.js), the gateway submits.
+      // Only wired when the gateway runs with --wallet-rpc/--wallet-program.
+      async function govern() {
+        if (!active.provider || !active.addr) {
+          setStatus("sign in first", "err");
+          return;
+        }
+        const op = prompt("Governance op: transfer | grant | bump", "transfer");
+        if (!op) return;
+        const body = { op, wallet: active.addr };
+        if (active.session) body.session = active.session;
+        if (op === "transfer") {
+          body.new_owner = prompt("New owner wallet (base58):");
+          if (!body.new_owner) return;
+        } else if (op === "grant") {
+          body.grantee = prompt("Grantee wallet (base58):");
+          if (!body.grantee) return;
+          body.caps = prompt("Caps:", "write, resize") || "view-only";
+          body.expiry = 0;
+        } else if (op !== "bump") {
+          setStatus("unknown op", "err");
+          return;
+        }
+        try {
+          const r = await fetch("govern/build", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify(body),
+          });
+          if (!r.ok) {
+            setStatus("build failed: " + (await r.text()), "err");
+            return;
+          }
+          const { tx_base64 } = await r.json();
+          const txBytes = Uint8Array.from(atob(tx_base64), (c) => c.charCodeAt(0));
+          const { Transaction } = await import(
+            "https://cdn.jsdelivr.net/npm/@solana/web3.js@1/+esm"
+          );
+          const tx = Transaction.from(txBytes);
+          setStatus("approve the transaction in your wallet…");
+          const signed = await active.provider.signTransaction(tx);
+          const signedB64 = btoa(String.fromCharCode(...signed.serialize()));
+          const s = await fetch("govern/submit", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ tx_base64: signedB64 }),
+          });
+          if (!s.ok) {
+            setStatus("submit failed: " + (await s.text()), "err");
+            return;
+          }
+          const { signature } = await s.json();
+          setStatus("done: " + signature);
+        } catch (e) {
+          setStatus("govern error: " + (e?.message ?? e), "err");
+        }
+      }
+      document.getElementById("manage").addEventListener("click", govern);
 
       async function walletLogin(cfg) {
         const walletsEl = document.getElementById("wallets");
