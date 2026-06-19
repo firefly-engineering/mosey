@@ -131,6 +131,7 @@ func runWeb(args []string, stderr *os.File) int {
 		delegationTTL: *delegationTTL,
 		logger:        logger,
 		logins:        map[string]*loginSession{},
+		grants:        map[string]*pendingGrant{},
 	}
 	if *walletLogin {
 		gw.walletLogin = true
@@ -209,6 +210,7 @@ type webGateway struct {
 
 	mu     sync.Mutex
 	logins map[string]*loginSession
+	grants map[string]*pendingGrant
 }
 
 func (g *webGateway) mux() http.Handler {
@@ -218,6 +220,8 @@ func (g *webGateway) mux() http.Handler {
 	if g.walletLogin {
 		mux.HandleFunc("/login/prepare", g.handleLoginPrepare)
 		mux.HandleFunc("/login/callback", g.handleLoginCallback)
+		mux.HandleFunc("/grant/prepare", g.handleGrantPrepare)
+		mux.HandleFunc("/grant/callback", g.handleGrantCallback)
 	}
 	if g.lister != nil {
 		mux.HandleFunc("/sessions", g.handleSessions)

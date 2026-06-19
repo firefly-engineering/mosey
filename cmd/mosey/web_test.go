@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -379,5 +380,88 @@ func TestWebGateway_DashboardSessions(t *testing.T) {
 	if len(out.Sessions) != 1 || out.Sessions[0].Session != wallet.Address(s1) ||
 		out.Sessions[0].Address != "PDA1" || out.Sessions[0].Epoch != 5 {
 		t.Fatalf("unexpected sessions payload: %+v", out.Sessions)
+	}
+}
+
+// TestWebGateway_OffchainGrant exercises the off-chain grant governance
+// op: the owner signs an owner→grantee delegation in the page and the
+// gateway returns the encoded chain blob.
+func TestWebGateway_OffchainGrant(t *testing.T) {
+	mkKey := func() ed25519.PrivateKey {
+		_, k, err := ed25519.GenerateKey(rand.Reader)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return k
+	}
+	pub := func(p ed25519.PrivateKey) ed25519.PublicKey { return p.Public().(ed25519.PublicKey) }
+	session, owner, grantee := mkKey(), mkKey(), mkKey()
+
+	gw := &webGateway{
+		walletLogin: true,
+		sessionKey:  pub(session),
+		logger:      newLogger(os.Stderr, "error"),
+		logins:      map[string]*loginSession{},
+		grants:      map[string]*pendingGrant{},
+	}
+	srv := httptest.NewServer(gw.mux())
+	defer srv.Close()
+
+	post := func(path string, body any) map[string]string {
+		buf, _ := json.Marshal(body)
+		resp, err := http.Post(srv.URL+path, "application/json", bytes.NewReader(buf))
+		if err != nil {
+			t.Fatalf("POST %s: %v", path, err)
+		}
+		defer func() { _ = resp.Body.Close() }()
+		if resp.StatusCode != http.StatusOK {
+			b, _ := io.ReadAll(resp.Body)
+			t.Fatalf("POST %s = %d: %s", path, resp.StatusCode, b)
+		}
+		var out map[string]string
+		_ = json.NewDecoder(resp.Body).Decode(&out)
+		return out
+	}
+
+	prep := post("/grant/prepare", map[string]any{
+		"wallet":          wallet.Address(pub(owner)),
+		"grantee":         wallet.Address(pub(grantee)),
+		"caps":            "write, resize",
+		"expires_seconds": 3600,
+	})
+	content, err := hex.DecodeString(prep["content_hex"])
+	if err != nil || len(content) == 0 {
+		t.Fatalf("bad content_hex: %v", err)
+	}
+	sig := ed25519.Sign(owner, content)
+	cb := post("/grant/callback", map[string]string{
+		"token":            prep["token"],
+		"signature_base58": wallet.EncodeBase58(sig),
+	})
+	blob, err := base64.StdEncoding.DecodeString(cb["grant_base64"])
+	if err != nil {
+		t.Fatalf("bad grant_base64: %v", err)
+	}
+	chain, err := wallet.DecodeChain(blob)
+	if err != nil {
+		t.Fatalf("DecodeChain: %v", err)
+	}
+	if len(chain) != 1 {
+		t.Fatalf("chain len %d, want 1", len(chain))
+	}
+	fields, err := chain[0].Verify()
+	if err != nil {
+		t.Fatalf("delegation does not verify: %v", err)
+	}
+	if !fields.Delegator.Equal(pub(owner)) || !fields.Delegate.Equal(pub(grantee)) {
+		t.Errorf("delegator/delegate = %s/%s, want %s/%s",
+			wallet.Address(fields.Delegator), wallet.Address(fields.Delegate),
+			wallet.Address(pub(owner)), wallet.Address(pub(grantee)))
+	}
+	if !fields.SessionID.Equal(pub(session)) {
+		t.Errorf("session = %s, want %s", wallet.Address(fields.SessionID), wallet.Address(pub(session)))
+	}
+	if fields.Caps != wallet.CapWrite|wallet.CapResize {
+		t.Errorf("caps = %v, want write|resize", fields.Caps)
 	}
 }

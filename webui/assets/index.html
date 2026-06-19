@@ -53,6 +53,7 @@
       <strong>mosey</strong>
       <span id="session"></span>
       <span id="wallets"></span>
+      <button id="grant" style="display: none">Grant access…</button>
       <span id="status">starting…</span>
     </header>
     <div id="terminal"></div>
@@ -74,6 +75,9 @@
         statusEl.textContent = s;
         statusEl.className = cls || "";
       };
+
+      // Connected wallet context, captured at attach for the grant op.
+      let active = { provider: null, addr: null, session: null };
 
       // --- base58 (matches wallet signMessage return / Go EncodeBase58)
       const ALPHABET =
@@ -192,8 +196,60 @@
         }
         document.getElementById("wallets").innerHTML = "";
         document.getElementById("picker")?.remove();
+        active = { provider, addr, session };
+        document.getElementById("grant").style.display = "";
         connect(token);
       }
+
+      // grantAccess: off-chain governance — the owner signs an
+      // owner→grantee delegation and the gateway returns a blob to hand
+      // to the grantee (who runs `mosey attach --wallet-grant <file>`).
+      async function grantAccess() {
+        if (!active.provider || !active.addr) {
+          setStatus("sign in first", "err");
+          return;
+        }
+        const grantee = prompt("Grantee wallet address (base58):");
+        if (!grantee) return;
+        const caps =
+          prompt("Caps (view-only | write, resize | write, resize, forge):", "write, resize") ||
+          "view-only";
+        try {
+          const body = { wallet: active.addr, grantee, caps, expires_seconds: 86400 };
+          if (active.session) body.session = active.session;
+          const prep = await fetch("grant/prepare", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify(body),
+          });
+          if (!prep.ok) {
+            setStatus("grant prepare failed: " + (await prep.text()), "err");
+            return;
+          }
+          const { token, content_hex } = await prep.json();
+          setStatus("approve the grant in your wallet…");
+          const res = await active.provider.signMessage(hexToBytes(content_hex), "utf8");
+          const sig = res.signature ?? res;
+          const cb = await fetch("grant/callback", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ token, signature_base58: b58(sig) }),
+          });
+          if (!cb.ok) {
+            setStatus("grant failed: " + (await cb.text()), "err");
+            return;
+          }
+          const { grant_base64 } = await cb.json();
+          setStatus("grant created");
+          prompt(
+            "Grant blob — give this to the grantee (base64; they decode it to a file and run `mosey attach --wallet-grant <file>`):",
+            grant_base64,
+          );
+        } catch (e) {
+          setStatus("grant error: " + (e?.message ?? e), "err");
+        }
+      }
+      document.getElementById("grant").addEventListener("click", grantAccess);
 
       async function walletLogin(cfg) {
         const walletsEl = document.getElementById("wallets");

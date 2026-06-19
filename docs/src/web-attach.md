@@ -344,17 +344,20 @@ Built and tested in this repo (`go test ./...`):
 | Wallet login | `--wallet-login`: `/login/prepare` mints `K` + renders the `W→K` delegation, `/login/callback` verifies the wallet signature and builds a per-login `auth.Wrap`; `/config`-driven browser sign flow; caps default view-only, never `forge`; `--delegation-ttl` ~16h | e2e: a local key signs the delegation; attach echoes over the authorized WS |
 | Dashboard (which) | `walletsolana.SessionsByOwner` — owner-indexed `getProgramAccounts` listing a wallet's sessions | unit (fake RPC) |
 | Dashboard + multi-session | `--wallet-rpc`/`--wallet-program` mode: `/sessions` endpoint, `session_key → /p2p/<peer-id>` target, per-login session selection (dial the chosen session via the DHT), browser session picker | unit (`sessionTarget`, `/sessions` with a fake lister) |
+| Governance: off-chain grant | `/grant/prepare` + `/grant/callback`: owner signs an `owner → grantee` delegation in the page (`signMessage`), gateway returns the encoded chain blob; UI "Grant access" control | unit (owner signs; blob decodes + verifies) |
 
 Remaining (not yet built):
 
 - **Grantee listing** — the dashboard lists *owned* sessions; granted
   ones need the extra `Grant → Session` hop (`getProgramAccounts` on
   grantee, then resolve each Grant's session).
-- **Governance writes** — transfer / grant / revoke / bump in the UI.
-  Needs **unsigned-transaction building** in `walletsolana` (the current
-  builders sign+submit with a local owner key; browser-wallet signing
-  needs the unsigned message handed out for `signTransaction`, then
-  submit) plus web3.js signing in the page. Best verified on devnet.
+- **On-chain governance writes** — transfer / on-chain grant / revoke /
+  bump in the UI. Needs **unsigned-transaction building** in
+  `walletsolana` (the current builders sign+submit with a local owner
+  key; browser-wallet signing needs the unsigned message handed out for
+  `signTransaction`, then submit) plus web3.js signing in the page. Best
+  verified on devnet. (The off-chain grant above is the transaction-free
+  governance path and is done.)
 - **Multi-user hardening** — per-wallet resource limits; the per-WS
   isolation is structural already.
 - **Offline assets** — xterm.js is loaded from a CDN; vendoring it into
