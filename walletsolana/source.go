@@ -22,6 +22,7 @@ type rpcCaller func(ctx context.Context, method string, params []any) (json.RawM
 // Options configures a Source.
 type Options struct {
 	RPCEndpoint  string            // e.g. https://api.devnet.solana.com
+	WSEndpoint   string            // override; default derives ws(s):// from RPCEndpoint
 	ProgramID    string            // base58 program id
 	SessionKey   ed25519.PublicKey // the session this server hosts
 	MaxStaleness time.Duration     // fail-open budget (default 30s)
@@ -29,22 +30,28 @@ type Options struct {
 	Commitment   string            // default "confirmed"
 	Now          func() time.Time  // default time.Now
 	call         rpcCaller         // test injection; nil → HTTP
+	dialWS       wsDialer          // test injection; nil → gorilla dial of WSEndpoint
 }
 
 // Source is a Solana-backed wallet.SnapshotSource. The hot path reads
-// the cached snapshot; Refresh/Run keep it current via getProgramAccounts.
+// the cached snapshot; Refresh/Run keep it current via getProgramAccounts,
+// with an accountSubscribe push for fast revocation (see subscribe.go).
 type Source struct {
-	programID    string
-	sessionKey   ed25519.PublicKey
-	maxStaleness time.Duration
-	pollInterval time.Duration
-	commitment   string
-	now          func() time.Time
-	call         rpcCaller
+	programID         string
+	sessionKey        ed25519.PublicKey
+	maxStaleness      time.Duration
+	pollInterval      time.Duration
+	reconcileInterval time.Duration
+	commitment        string
+	now               func() time.Time
+	call              rpcCaller
+	wsEndpoint        string
+	dialWS            wsDialer
 
-	mu     sync.Mutex
-	snap   *snapshot
-	lastOK time.Time
+	mu       sync.Mutex
+	snap     *snapshot
+	lastOK   time.Time
+	subAddrs []string // session account + known grant accounts, for accountSubscribe
 }
 
 // New builds a Source. It does not perform I/O — call Refresh (or Run)
@@ -57,13 +64,16 @@ func New(opts Options) (*Source, error) {
 		return nil, errors.New("walletsolana: SessionKey must be a 32-byte public key")
 	}
 	s := &Source{
-		programID:    opts.ProgramID,
-		sessionKey:   opts.SessionKey,
-		maxStaleness: orDur(opts.MaxStaleness, 30*time.Second),
-		pollInterval: orDur(opts.PollInterval, 10*time.Second),
-		commitment:   orStr(opts.Commitment, "confirmed"),
-		now:          opts.Now,
-		call:         opts.call,
+		programID:         opts.ProgramID,
+		sessionKey:        opts.SessionKey,
+		maxStaleness:      orDur(opts.MaxStaleness, 30*time.Second),
+		pollInterval:      orDur(opts.PollInterval, 10*time.Second),
+		reconcileInterval: orDur(opts.PollInterval, 10*time.Second),
+		commitment:        orStr(opts.Commitment, "confirmed"),
+		now:               opts.Now,
+		call:              opts.call,
+		wsEndpoint:        opts.WSEndpoint,
+		dialWS:            opts.dialWS,
 	}
 	if s.now == nil {
 		s.now = time.Now
@@ -73,6 +83,16 @@ func New(opts Options) (*Source, error) {
 			return nil, errors.New("walletsolana: RPCEndpoint required")
 		}
 		s.call = httpCaller(opts.RPCEndpoint)
+	}
+	// Push path: default the WS endpoint from the RPC URL and the dialer
+	// to gorilla. Left nil (push disabled, poll-only) when neither a WS
+	// endpoint nor an RPC URL to derive one from is available — e.g. unit
+	// tests that inject `call` directly.
+	if s.wsEndpoint == "" && opts.RPCEndpoint != "" {
+		s.wsEndpoint = deriveWSEndpoint(opts.RPCEndpoint)
+	}
+	if s.dialWS == nil && s.wsEndpoint != "" {
+		s.dialWS = dialGorilla
 	}
 	return s, nil
 }
@@ -103,9 +123,16 @@ func (s *Source) VerifyNow(ctx context.Context, w ed25519.PublicKey) (wallet.Cap
 	return caps, ok, nil
 }
 
-// Run polls Refresh until ctx is cancelled. Errors are returned to the
+// Run keeps the snapshot current until ctx is cancelled: a backstop poll
+// every PollInterval, plus (when a WS endpoint is configured) an
+// accountSubscribe watcher that triggers an immediate refresh on a change
+// to the session or a known grant — fast revocation. Errors go to the
 // optional onError callback; the snapshot keeps serving (fail-open).
 func (s *Source) Run(ctx context.Context, onError func(error)) {
+	refreshNow := make(chan struct{}, 1)
+	if s.dialWS != nil {
+		go s.watch(ctx, refreshNow, onError)
+	}
 	t := time.NewTicker(s.pollInterval)
 	defer t.Stop()
 	for {
@@ -116,8 +143,17 @@ func (s *Source) Run(ctx context.Context, onError func(error)) {
 		case <-ctx.Done():
 			return
 		case <-t.C:
+		case <-refreshNow:
 		}
 	}
+}
+
+// subscribeTargets returns the current accountSubscribe set (session
+// account + known grant accounts), as recorded by the last Refresh.
+func (s *Source) subscribeTargets() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]string(nil), s.subAddrs...)
 }
 
 type rpcAccount struct {
@@ -157,6 +193,7 @@ func (s *Source) Refresh(ctx context.Context) error {
 	// Find our session and its on-chain account address.
 	var sess *Session
 	var sessAddr ed25519.PublicKey
+	var sessAddrStr string
 	for pubkey, data := range decoded {
 		if len(data) < 8 || [8]byte(data[:8]) != sessionDisc {
 			continue
@@ -169,16 +206,18 @@ func (s *Source) Refresh(ctx context.Context) error {
 		if aerr != nil {
 			continue
 		}
-		sess, sessAddr = dec, addr
+		sess, sessAddr, sessAddrStr = dec, addr, pubkey
 		break
 	}
 	if sess == nil {
 		return fmt.Errorf("walletsolana: session %s not registered under program %s", wallet.Address(s.sessionKey), s.programID)
 	}
 
-	// Collect grants that reference this session's account address.
+	// Collect grants that reference this session's account address, and
+	// their on-chain addresses (the accountSubscribe targets for revoke).
 	var grants []*Grant
-	for _, data := range decoded {
+	targets := []string{sessAddrStr}
+	for pubkey, data := range decoded {
 		if len(data) < 8 || [8]byte(data[:8]) != grantDisc {
 			continue
 		}
@@ -187,11 +226,12 @@ func (s *Source) Refresh(ctx context.Context) error {
 			continue
 		}
 		grants = append(grants, g)
+		targets = append(targets, pubkey)
 	}
 
 	snap := buildSnapshot(sess, grants, s.now())
 	s.mu.Lock()
-	s.snap, s.lastOK = snap, s.now()
+	s.snap, s.lastOK, s.subAddrs = snap, s.now(), targets
 	s.mu.Unlock()
 	return nil
 }
