@@ -19,11 +19,14 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	ic "github.com/libp2p/go-libp2p/core/crypto"
+	"github.com/libp2p/go-libp2p/core/peer"
 
 	"github.com/firefly-engineering/mosey/auth"
 	unixbackend "github.com/firefly-engineering/mosey/transport/unix"
 	"github.com/firefly-engineering/mosey/vterm"
 	"github.com/firefly-engineering/mosey/wallet"
+	"github.com/firefly-engineering/mosey/walletsolana"
 )
 
 // TestWebGateway_BridgeRoundTrip stands up an in-process vterm host
@@ -286,4 +289,95 @@ func TestWebGateway_WalletLoginRoundTrip(t *testing.T) {
 		time.Sleep(50 * time.Millisecond)
 	}
 	t.Fatal("did not observe echoed input over the wallet-login session")
+}
+
+// TestSessionTarget checks the session_key → /p2p/<peer-id> conversion
+// round-trips to the same peer id libp2p derives from the key.
+func TestSessionTarget(t *testing.T) {
+	pub, _, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("gen key: %v", err)
+	}
+	target, err := sessionTarget(pub)
+	if err != nil {
+		t.Fatalf("sessionTarget: %v", err)
+	}
+	if !strings.HasPrefix(target, "/p2p/") {
+		t.Fatalf("target %q lacks /p2p/ prefix", target)
+	}
+	got, err := peer.Decode(strings.TrimPrefix(target, "/p2p/"))
+	if err != nil {
+		t.Fatalf("decode peer id: %v", err)
+	}
+	lpk, err := ic.UnmarshalEd25519PublicKey(pub)
+	if err != nil {
+		t.Fatalf("unmarshal libp2p key: %v", err)
+	}
+	want, err := peer.IDFromPublicKey(lpk)
+	if err != nil {
+		t.Fatalf("id from key: %v", err)
+	}
+	if got != want {
+		t.Fatalf("sessionTarget peer id = %s, want %s", got, want)
+	}
+}
+
+type fakeLister struct {
+	sessions []walletsolana.OwnedSession
+	gotOwner ed25519.PublicKey
+}
+
+func (f *fakeLister) SessionsByOwner(_ context.Context, owner ed25519.PublicKey) ([]walletsolana.OwnedSession, error) {
+	f.gotOwner = owner
+	return f.sessions, nil
+}
+
+// TestWebGateway_DashboardSessions checks the /sessions endpoint maps a
+// wallet to its on-chain sessions via the (faked) lister.
+func TestWebGateway_DashboardSessions(t *testing.T) {
+	mk := func() ed25519.PublicKey {
+		p, _, err := ed25519.GenerateKey(rand.Reader)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	owner, s1 := mk(), mk()
+	fl := &fakeLister{sessions: []walletsolana.OwnedSession{{SessionKey: s1, Address: "PDA1", Epoch: 5}}}
+	gw := &webGateway{
+		walletLogin: true,
+		multiSession: true,
+		lister:      fl,
+		logger:      newLogger(os.Stderr, "error"),
+		logins:      map[string]*loginSession{},
+	}
+	srv := httptest.NewServer(gw.mux())
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL + "/sessions?wallet=" + wallet.Address(owner))
+	if err != nil {
+		t.Fatalf("GET /sessions: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("GET /sessions = %d: %s", resp.StatusCode, b)
+	}
+	var out struct {
+		Sessions []struct {
+			Session string `json:"session"`
+			Address string `json:"address"`
+			Epoch   int    `json:"epoch"`
+		} `json:"sessions"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if !fl.gotOwner.Equal(owner) {
+		t.Errorf("lister got owner %s, want %s", wallet.Address(fl.gotOwner), wallet.Address(owner))
+	}
+	if len(out.Sessions) != 1 || out.Sessions[0].Session != wallet.Address(s1) ||
+		out.Sessions[0].Address != "PDA1" || out.Sessions[0].Epoch != 5 {
+		t.Fatalf("unexpected sessions payload: %+v", out.Sessions)
+	}
 }

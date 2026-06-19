@@ -163,43 +163,76 @@
         return out;
       }
 
-      async function walletLogin(session) {
-        document.getElementById("session").textContent = "· " + session.slice(0, 8) + "…";
+      // attachToSession: sign the W→K delegation for `session` (null in
+      // fixed-session mode, where the gateway names it) and open the WS.
+      async function attachToSession(provider, addr, session) {
+        const body = { wallet: addr, caps: "write, resize" };
+        if (session) body.session = session;
+        const prep = await fetch("login/prepare", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        if (!prep.ok) {
+          setStatus("prepare failed: " + (await prep.text()), "err");
+          return;
+        }
+        const { token, content_hex } = await prep.json();
+        setStatus("approve the delegation in your wallet…");
+        const res = await provider.signMessage(hexToBytes(content_hex), "utf8");
+        const sig = res.signature ?? res;
+        const cb = await fetch("login/callback", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ token, signature_base58: b58(sig) }),
+        });
+        if (!cb.ok) {
+          setStatus("callback failed: " + (await cb.text()), "err");
+          return;
+        }
+        document.getElementById("wallets").innerHTML = "";
+        document.getElementById("picker")?.remove();
+        connect(token);
+      }
+
+      async function walletLogin(cfg) {
         const walletsEl = document.getElementById("wallets");
+        if (cfg.session)
+          document.getElementById("session").textContent =
+            "· " + cfg.session.slice(0, 8) + "…";
 
         async function signIn(provider) {
           try {
             setStatus("connecting wallet…");
             const resp = await provider.connect();
             const addr = (resp?.publicKey ?? provider.publicKey).toString();
-
-            const prep = await fetch("login/prepare", {
-              method: "POST",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify({ wallet: addr, caps: "write, resize" }),
-            });
-            if (!prep.ok) {
-              setStatus("prepare failed: " + (await prep.text()), "err");
+            if (cfg.session) {
+              await attachToSession(provider, addr, null); // fixed session
               return;
             }
-            const { token, content_hex } = await prep.json();
-            const content = hexToBytes(content_hex);
-
-            setStatus("approve the delegation in your wallet…");
-            const res = await provider.signMessage(content, "utf8");
-            const sig = res.signature ?? res;
-
-            const cb = await fetch("login/callback", {
-              method: "POST",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify({ token, signature_base58: b58(sig) }),
-            });
-            if (!cb.ok) {
-              setStatus("callback failed: " + (await cb.text()), "err");
+            // Multi-session: list the wallet's sessions and let it pick.
+            setStatus("loading your sessions…");
+            const r = await fetch("sessions?wallet=" + encodeURIComponent(addr));
+            if (!r.ok) {
+              setStatus("list sessions failed: " + (await r.text()), "err");
               return;
             }
-            walletsEl.textContent = "";
-            connect(token);
+            const { sessions } = await r.json();
+            walletsEl.innerHTML = "";
+            if (!sessions || !sessions.length) {
+              setStatus("no sessions found for this wallet", "err");
+              return;
+            }
+            const picker = document.createElement("span");
+            picker.id = "picker";
+            for (const s of sessions) {
+              const btn = document.createElement("button");
+              btn.textContent = "Attach · " + s.session.slice(0, 8) + "…";
+              btn.onclick = () => attachToSession(provider, addr, s.session);
+              picker.appendChild(btn);
+            }
+            document.querySelector("header").appendChild(picker);
+            setStatus("pick a session");
           } catch (e) {
             setStatus("error: " + (e?.message ?? e), "err");
           }
@@ -228,7 +261,7 @@
       try {
         const cfg = await (await fetch("config")).json();
         if (cfg.mode === "wallet") {
-          await walletLogin(cfg.session);
+          await walletLogin(cfg);
         } else {
           connect(); // static auth: gateway holds the credential
         }

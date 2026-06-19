@@ -42,6 +42,7 @@ import (
 	"github.com/firefly-engineering/mosey/cmd/internal/walletflags"
 	"github.com/firefly-engineering/mosey/transport"
 	"github.com/firefly-engineering/mosey/wallet"
+	"github.com/firefly-engineering/mosey/walletsolana"
 	"github.com/firefly-engineering/mosey/webui"
 )
 
@@ -56,8 +57,10 @@ func runWeb(args []string, stderr *os.File) int {
 	listen := fs.String("listen", "127.0.0.1:8080", "HTTP listen address. Front it with an HTTPS proxy (e.g. `tailscale serve`); browser wallets require a secure context.")
 	target := fs.String("target", "", "mosey host endpoint to attach to (a multiaddr, /p2p/<session-key>, or https://… URL).")
 	secret := fs.String("secret", "", "static-mode PSK to authenticate to the host; mutually exclusive with --cert / --wallet-grant / --wallet-login.")
-	walletLogin := fs.Bool("wallet-login", false, "per-browser wallet login: each user signs a fresh W→K delegation in the page (multi-user). Requires --session.")
-	session := fs.String("session", "", "base58 session key the target host runs (required with --wallet-login; the delegation names it).")
+	walletLogin := fs.Bool("wallet-login", false, "per-browser wallet login: each user signs a fresh W→K delegation in the page (multi-user).")
+	session := fs.String("session", "", "base58 session key the target host runs (fixed-session --wallet-login; the delegation names it).")
+	walletRPC := fs.String("wallet-rpc", "", "Solana JSON-RPC endpoint; with --wallet-program enables the dashboard + multi-session attach (browser picks the session).")
+	walletProgram := fs.String("wallet-program", "", "base58 mosey-session program id; with --wallet-rpc enables the dashboard + multi-session attach.")
 	delegationTTL := fs.Duration("delegation-ttl", defaultDelegationTTL, "validity of each W→K delegation in --wallet-login mode")
 	noBootstrap := fs.Bool("no-p2p-bootstrap", false, "skip the IPFS public bootstrap set; useful for LAN-only / offline testing")
 	insecureTLS := fs.Bool("insecure-tls", false, "for https:// / wss:// targets, skip server certificate verification (self-signed dev only)")
@@ -74,10 +77,7 @@ func runWeb(args []string, stderr *os.File) int {
 		fmt.Fprintln(stderr, "mosey web:", err)
 		return 2
 	}
-	if *target == "" {
-		fmt.Fprintln(stderr, "mosey web: --target is required (the mosey host to bridge to)")
-		return 2
-	}
+	multiSession := *walletRPC != "" && *walletProgram != ""
 
 	staticModes := authModes(*secret != "", certCfg.Configured(), walletCfg.Configured())
 	if *walletLogin {
@@ -85,11 +85,22 @@ func runWeb(args []string, stderr *os.File) int {
 			fmt.Fprintln(stderr, "mosey web: --wallet-login is mutually exclusive with --secret / --cert / --wallet-grant")
 			return 2
 		}
-		if *session == "" {
-			fmt.Fprintln(stderr, "mosey web: --session (base58 session key) is required with --wallet-login")
-			return 2
+		if !multiSession {
+			// Fixed-session mode needs both the session and a dial target.
+			if *session == "" {
+				fmt.Fprintln(stderr, "mosey web: --session is required with --wallet-login (or set --wallet-rpc + --wallet-program for the multi-session dashboard)")
+				return 2
+			}
+			if *target == "" {
+				fmt.Fprintln(stderr, "mosey web: --target is required (the mosey host to bridge to)")
+				return 2
+			}
 		}
 	} else {
+		if *target == "" {
+			fmt.Fprintln(stderr, "mosey web: --target is required (the mosey host to bridge to)")
+			return 2
+		}
 		switch staticModes {
 		case 0:
 			fmt.Fprintln(stderr, "mosey web: pick an auth mode — one of --secret / --cert / --wallet-grant, or --wallet-login")
@@ -122,13 +133,31 @@ func runWeb(args []string, stderr *os.File) int {
 		logins:        map[string]*loginSession{},
 	}
 	if *walletLogin {
-		sessionKey, err := wallet.ParseAddress(*session)
-		if err != nil {
-			fmt.Fprintln(stderr, "mosey web: --session:", err)
-			return 2
-		}
 		gw.walletLogin = true
-		gw.sessionKey = sessionKey
+		if multiSession {
+			// The dashboard uses only the multi-session read path
+			// (SessionsByOwner), which ignores SessionKey; New still wants
+			// a 32-byte key, so pass a placeholder. Snapshot/Refresh are
+			// never called on this Source.
+			src, err := walletsolana.New(walletsolana.Options{
+				RPCEndpoint: *walletRPC,
+				ProgramID:   *walletProgram,
+				SessionKey:  make(ed25519.PublicKey, ed25519.PublicKeySize),
+			})
+			if err != nil {
+				fmt.Fprintln(stderr, "mosey web: dashboard source:", err)
+				return 2
+			}
+			gw.multiSession = true
+			gw.lister = src
+		} else {
+			sessionKey, err := wallet.ParseAddress(*session)
+			if err != nil {
+				fmt.Fprintln(stderr, "mosey web: --session:", err)
+				return 2
+			}
+			gw.sessionKey = sessionKey
+		}
 	} else {
 		authenticator, err := buildAttachAuthenticator(*secret, &certCfg, &walletCfg)
 		if err != nil {
@@ -173,6 +202,8 @@ type webGateway struct {
 	upgrader        websocket.Upgrader
 
 	walletLogin   bool
+	multiSession  bool          // dial the browser-chosen session, not g.target
+	lister        sessionLister // dashboard chain reads; nil disables /sessions
 	sessionKey    ed25519.PublicKey
 	delegationTTL time.Duration
 
@@ -188,6 +219,9 @@ func (g *webGateway) mux() http.Handler {
 		mux.HandleFunc("/login/prepare", g.handleLoginPrepare)
 		mux.HandleFunc("/login/callback", g.handleLoginCallback)
 	}
+	if g.lister != nil {
+		mux.HandleFunc("/sessions", g.handleSessions)
+	}
 	mux.Handle("/", http.FileServer(http.FS(webui.FS())))
 	return mux
 }
@@ -196,9 +230,11 @@ func (g *webGateway) mux() http.Handler {
 func (g *webGateway) handleConfig(w http.ResponseWriter, _ *http.Request) {
 	cfg := map[string]any{"mode": "static"}
 	if g.walletLogin {
-		cfg = map[string]any{
-			"mode":    "wallet",
-			"session": wallet.Address(g.sessionKey),
+		cfg = map[string]any{"mode": "wallet"}
+		// Fixed-session mode names the session; multi-session mode omits
+		// it (the browser lists + picks one from /sessions).
+		if !g.multiSession {
+			cfg["session"] = wallet.Address(g.sessionKey)
 		}
 	}
 	writeJSON(w, cfg)
@@ -209,6 +245,7 @@ func (g *webGateway) handleConfig(w http.ResponseWriter, _ *http.Request) {
 // {type:"resize",cols,rows} drives the remote PTY size.
 func (g *webGateway) handleWS(w http.ResponseWriter, r *http.Request) {
 	tr := g.staticTransport
+	target := g.target
 	if g.walletLogin {
 		ls := g.getLogin(r.URL.Query().Get("token"))
 		if ls == nil || ls.authed == nil {
@@ -216,6 +253,7 @@ func (g *webGateway) handleWS(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		tr = ls.authed
+		target = ls.target // per-login (the chosen session in multi-session mode)
 	}
 
 	conn, err := g.upgrader.Upgrade(w, r, nil)
@@ -263,7 +301,7 @@ func (g *webGateway) handleWS(w http.ResponseWriter, r *http.Request) {
 	// Host → browser: attach output becomes binary WS frames.
 	err = attach.Run(ctx, attach.Options{
 		Transport: tr,
-		Target:    g.target,
+		Target:    target,
 		Logger:    g.logger,
 		Stdin:     stdinR,
 		Stdout:    &wsWriter{conn: conn},

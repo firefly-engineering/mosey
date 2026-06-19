@@ -24,10 +24,12 @@ import (
 // wallet signs; authed is the per-user transport, set once the signature
 // verifies (nil until then).
 type loginSession struct {
-	connKey ed25519.PrivateKey
-	content []byte
-	authed  transport.Transport
-	expires time.Time
+	connKey    ed25519.PrivateKey
+	content    []byte
+	sessionKey ed25519.PublicKey   // the session this login attaches to
+	target     string              // dial string for that session
+	authed     transport.Transport // set once the signature verifies
+	expires    time.Time
 }
 
 func (g *webGateway) putLogin(token string, ls *loginSession) {
@@ -73,8 +75,9 @@ func newLoginToken() (string, error) {
 // {token, content_hex}.
 func (g *webGateway) handleLoginPrepare(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Wallet string `json:"wallet"`
-		Caps   string `json:"caps"`
+		Wallet  string `json:"wallet"`
+		Caps    string `json:"caps"`
+		Session string `json:"session"` // multi-session mode: which session to attach
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
@@ -84,6 +87,21 @@ func (g *webGateway) handleLoginPrepare(w http.ResponseWriter, r *http.Request) 
 	if err != nil {
 		http.Error(w, "bad wallet", http.StatusBadRequest)
 		return
+	}
+
+	// Resolve which session this login attaches to. In multi-session mode
+	// the browser names it (from the dashboard); otherwise it is the
+	// gateway's fixed --session / --target.
+	sessionKey, target := g.sessionKey, g.target
+	if g.multiSession {
+		if sessionKey, err = wallet.ParseAddress(req.Session); err != nil {
+			http.Error(w, "bad or missing session", http.StatusBadRequest)
+			return
+		}
+		if target, err = sessionTarget(sessionKey); err != nil {
+			http.Error(w, "bad session key", http.StatusBadRequest)
+			return
+		}
 	}
 	caps := wallet.Caps(0) // view-only default
 	if req.Caps != "" {
@@ -106,7 +124,7 @@ func (g *webGateway) handleLoginPrepare(w http.ResponseWriter, r *http.Request) 
 	}
 	now := time.Now()
 	content := wallet.Fields{
-		SessionID: g.sessionKey,
+		SessionID: sessionKey,
 		Delegator: delegator,
 		Delegate:  connPub,
 		Caps:      caps,
@@ -121,9 +139,11 @@ func (g *webGateway) handleLoginPrepare(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	g.putLogin(token, &loginSession{
-		connKey: connKey,
-		content: content,
-		expires: now.Add(g.delegationTTL),
+		connKey:    connKey,
+		content:    content,
+		sessionKey: sessionKey,
+		target:     target,
+		expires:    now.Add(g.delegationTTL),
 	})
 	writeJSON(w, map[string]string{"token": token, "content_hex": hex.EncodeToString(content)})
 }
@@ -158,7 +178,7 @@ func (g *webGateway) handleLoginCallback(w http.ResponseWriter, r *http.Request)
 	clientAuth, err := auth.NewWalletClientAuth(auth.ClientOptions{
 		ConnKey:       ls.connKey,
 		Chain:         []wallet.Delegation{deleg},
-		ExpectSession: g.sessionKey,
+		ExpectSession: ls.sessionKey,
 	})
 	if err != nil {
 		http.Error(w, "server error", http.StatusInternalServerError)

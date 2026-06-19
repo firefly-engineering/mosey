@@ -343,13 +343,13 @@ Built and tested in this repo (`go test ./...`):
 | Discovery (where) | libp2p `RoutedHost` so `Dial` resolves a bare `/p2p/<session-key>` via `dht.FindPeer` | `parseEndpoint` tests (bare + full forms) |
 | Wallet login | `--wallet-login`: `/login/prepare` mints `K` + renders the `W→K` delegation, `/login/callback` verifies the wallet signature and builds a per-login `auth.Wrap`; `/config`-driven browser sign flow; caps default view-only, never `forge`; `--delegation-ttl` ~16h | e2e: a local key signs the delegation; attach echoes over the authorized WS |
 | Dashboard (which) | `walletsolana.SessionsByOwner` — owner-indexed `getProgramAccounts` listing a wallet's sessions | unit (fake RPC) |
+| Dashboard + multi-session | `--wallet-rpc`/`--wallet-program` mode: `/sessions` endpoint, `session_key → /p2p/<peer-id>` target, per-login session selection (dial the chosen session via the DHT), browser session picker | unit (`sessionTarget`, `/sessions` with a fake lister) |
 
 Remaining (not yet built):
 
-- **Dashboard wiring + multi-session attach** — a gateway `/sessions`
-  endpoint over `SessionsByOwner`, and per-login *target selection* (dial
-  the chosen `session_key` via the DHT) instead of a single `--target`.
-  Grantee listing needs the extra `Grant → Session` hop.
+- **Grantee listing** — the dashboard lists *owned* sessions; granted
+  ones need the extra `Grant → Session` hop (`getProgramAccounts` on
+  grantee, then resolve each Grant's session).
 - **Governance writes** — transfer / grant / revoke / bump in the UI.
   Needs **unsigned-transaction building** in `walletsolana` (the current
   builders sign+submit with a local owner key; browser-wallet signing
