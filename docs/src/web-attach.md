@@ -345,17 +345,13 @@ Built and tested in this repo (`go test ./...`):
 | Dashboard (which) | `walletsolana.SessionsByOwner` — owner-indexed `getProgramAccounts` listing a wallet's sessions | unit (fake RPC) |
 | Dashboard + multi-session | `--wallet-rpc`/`--wallet-program` mode: `/sessions` endpoint, `session_key → /p2p/<peer-id>` target, per-login session selection (dial the chosen session via the DHT), browser session picker | unit (`sessionTarget`, `/sessions` with a fake lister) |
 | Governance: off-chain grant | `/grant/prepare` + `/grant/callback`: owner signs an `owner → grantee` delegation in the page (`signMessage`), gateway returns the encoded chain blob; UI "Grant access" control | unit (owner signs; blob decodes + verifies) |
-| Governance: on-chain writes | `walletsolana` unsigned-tx builders (`BuildTransferOwnership` / `BuildGrant` / `BumpEpoch`, shared ix builders) + `SubmitSigned`; gateway `/govern/build` + `/govern/submit`; UI "Manage…" → web3.js `signTransaction` → submit. The gateway only builds + submits; the owner wallet signs. | unit (`compileUnsignedTx` == signed-minus-sig; `/govern` routing with a fake governor). **Browser signing + submission verified on devnet, not in CI.** |
+| Governance: on-chain writes | `walletsolana` unsigned-tx builders (`BuildTransferOwnership` / `BuildGrant` / `BuildRevoke` / `BumpEpoch`, shared ix builders) + `SubmitSigned`; gateway `/govern/build` + `/govern/submit`; UI "Manage…" → web3.js `signTransaction` → submit. The gateway only builds + submits; the owner wallet signs. | unit (`compileUnsignedTx` == signed-minus-sig; `/govern` routing with a fake governor). **Browser signing + submission verified on devnet, not in CI.** |
 
 Remaining (not yet built):
 
 - **Grantee listing** — the dashboard lists *owned* sessions; granted
   ones need the extra `Grant → Session` hop (`getProgramAccounts` on
   grantee, then resolve each Grant's session).
-- **`revoke` op** — `walletsolana` has no `revoke` instruction builder
-  yet (the off-chain grant uses short expiry; `bump_epoch` is the
-  mass-revoke). Add a `revoke` ix + `BuildRevoke` for per-grantee
-  on-chain revocation.
 - **Multi-user resource limits**, and **vendoring xterm.js / web3.js**
   for offline (both load from a CDN today).
 - **Multi-user hardening** — per-wallet resource limits; the per-WS

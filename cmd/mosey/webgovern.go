@@ -27,6 +27,7 @@ type governor interface {
 	BuildTransferOwnership(ctx context.Context, ownerPub, sessionKey, newOwner ed25519.PublicKey) ([]byte, error)
 	BuildGrant(ctx context.Context, ownerPub, sessionKey, grantee ed25519.PublicKey, caps uint8, expiry int64) ([]byte, error)
 	BuildBumpEpoch(ctx context.Context, ownerPub, sessionKey ed25519.PublicKey) ([]byte, error)
+	BuildRevoke(ctx context.Context, ownerPub, sessionKey, grantee ed25519.PublicKey) ([]byte, error)
 	SubmitSigned(ctx context.Context, tx []byte) (string, error)
 }
 
@@ -101,8 +102,19 @@ func (g *webGateway) handleGovernBuild(w http.ResponseWriter, r *http.Request) {
 			g.governError(w, err)
 			return
 		}
+	case "revoke":
+		grantee, err := wallet.ParseAddress(req.Grantee)
+		if err != nil {
+			http.Error(w, "bad grantee", http.StatusBadRequest)
+			return
+		}
+		tx, err = g.gov.BuildRevoke(r.Context(), owner, session, grantee)
+		if err != nil {
+			g.governError(w, err)
+			return
+		}
 	default:
-		http.Error(w, "unknown op (want transfer|grant|bump)", http.StatusBadRequest)
+		http.Error(w, "unknown op (want transfer|grant|revoke|bump)", http.StatusBadRequest)
 		return
 	}
 	writeJSON(w, map[string]string{"tx_base64": base64.StdEncoding.EncodeToString(tx)})

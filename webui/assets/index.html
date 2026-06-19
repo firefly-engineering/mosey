@@ -264,7 +264,10 @@
           setStatus("sign in first", "err");
           return;
         }
-        const op = prompt("Governance op: transfer | grant | bump", "transfer");
+        const op = prompt(
+          "Governance op: transfer | grant | revoke | bump",
+          "transfer",
+        );
         if (!op) return;
         const body = { op, wallet: active.addr };
         if (active.session) body.session = active.session;
@@ -276,6 +279,9 @@
           if (!body.grantee) return;
           body.caps = prompt("Caps:", "write, resize") || "view-only";
           body.expiry = 0;
+        } else if (op === "revoke") {
+          body.grantee = prompt("Grantee wallet to revoke (base58):");
+          if (!body.grantee) return;
         } else if (op !== "bump") {
           setStatus("unknown op", "err");
           return;

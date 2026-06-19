@@ -483,6 +483,9 @@ func (f *fakeGovernor) BuildGrant(_ context.Context, owner, session, grantee ed2
 func (f *fakeGovernor) BuildBumpEpoch(_ context.Context, owner, session ed25519.PublicKey) ([]byte, error) {
 	return f.tx, nil
 }
+func (f *fakeGovernor) BuildRevoke(_ context.Context, owner, session, grantee ed25519.PublicKey) ([]byte, error) {
+	return f.tx, nil
+}
 func (f *fakeGovernor) SubmitSigned(_ context.Context, tx []byte) (string, error) {
 	f.submitted = tx
 	return f.sig, nil

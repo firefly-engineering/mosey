@@ -84,6 +84,31 @@ func (s *Source) bumpEpochIx(ownerPub pubkey, sessionKey ed25519.PublicKey) (ins
 	}, nil
 }
 
+func (s *Source) revokeIx(ownerPub pubkey, sessionKey, grantee ed25519.PublicKey) (instruction, error) {
+	prog, err := s.programPubkey()
+	if err != nil {
+		return instruction{}, err
+	}
+	sessionAddr, _, err := s.sessionPDA(sessionKey)
+	if err != nil {
+		return instruction{}, err
+	}
+	grantAddr, _, err := s.grantPDA(sessionAddr, grantee)
+	if err != nil {
+		return instruction{}, err
+	}
+	disc := ixDiscriminator("revoke")
+	return instruction{
+		programID: prog,
+		accounts: []accountMeta{
+			{key: sessionAddr, isSigner: false, writable: false},
+			{key: grantAddr, isSigner: false, writable: true},
+			{key: ownerPub, isSigner: true, writable: true},
+		},
+		data: append([]byte(nil), disc[:]...),
+	}, nil
+}
+
 // compileUnsignedTx serializes msg as an unsigned legacy transaction: a
 // compact-u16 signature count, that many 64-byte zero placeholders, then
 // the message. This is the wire form a browser wallet deserializes,
@@ -136,6 +161,17 @@ func (s *Source) BuildGrant(ctx context.Context, ownerPub ed25519.PublicKey, ses
 func (s *Source) BuildBumpEpoch(ctx context.Context, ownerPub ed25519.PublicKey, sessionKey ed25519.PublicKey) ([]byte, error) {
 	op := toPubkey(ownerPub)
 	ix, err := s.bumpEpochIx(op, sessionKey)
+	if err != nil {
+		return nil, err
+	}
+	return s.buildUnsigned(ctx, op, []instruction{ix})
+}
+
+// BuildRevoke returns the unsigned revoke transaction that closes the
+// grant for grantee (rent refunds to the owner).
+func (s *Source) BuildRevoke(ctx context.Context, ownerPub ed25519.PublicKey, sessionKey, grantee ed25519.PublicKey) ([]byte, error) {
+	op := toPubkey(ownerPub)
+	ix, err := s.revokeIx(op, sessionKey, grantee)
 	if err != nil {
 		return nil, err
 	}
