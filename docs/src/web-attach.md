@@ -2,11 +2,12 @@
 
 > **Status: design proposal.** Nothing here is implemented yet. This
 > document designs a [ttyd](https://github.com/tsl0922/ttyd)-equivalent:
-> attach to a running `mosey launch` from a web browser, with on-chain
-> [wallet auth](wallet-auth.md) deciding what you may attach to. It is a
-> **self-hosted web gateway**: a small service you run that is a full
-> libp2p node *and* a web terminal, reached from your browser over a VPN
-> (Tailscale).
+> attach to a running `mosey launch` from a web browser — **and manage the
+> session** (transfer ownership, grant / revoke access, …) — with on-chain
+> [wallet auth](wallet-auth.md) deciding what you may attach to and govern.
+> It is a **self-hosted web gateway**: a small service you run that is a
+> full libp2p node *and* a web terminal *and* a management console,
+> reached from your browser over a VPN (Tailscale).
 >
 > This **supersedes** two earlier drafts, preserved in git history:
 > a *browser-as-full-libp2p-node* design (`docs(web-attach): add browser
@@ -93,6 +94,26 @@ The host side does **not change**: a host is already a libp2p node with
 `peer_id == session_key`, authenticating attachers with the wallet
 handshake. The gateway is just another attacher.
 
+## Reachability: the VPN front
+
+The gateway is **VPN-agnostic** — it is a plain HTTP/WS server (bound to
+localhost or the tailnet interface); how the browser reaches it privately
+is the operator's choice, not baked into mosey.
+
+There is one **hard constraint**, though: browser wallets
+(Phantom / Solflare / Backpack) only inject and sign in a **secure
+context** — `https://` or `http://localhost`. A plain-`http` tailnet IP
+will not work. So whatever fronts the gateway **must terminate HTTPS.**
+
+- **Tailscale (recommended default).** `tailscale serve` terminates HTTPS
+  with a real Let's Encrypt cert for the box's MagicDNS name and proxies
+  to the gateway's local port — secure context, no cert chores, NAT
+  traversal for roaming clients, all for free.
+- **Headscale** — the same, with a self-hosted control plane (no third
+  party).
+- **Generic** — any reverse proxy / VPN that provides HTTPS in front of
+  the gateway works; the gateway doesn't care.
+
 ## The browser side
 
 A normal web client — **no libp2p, no key storage:**
@@ -101,7 +122,9 @@ A normal web client — **no libp2p, no key storage:**
 - **wallet connect** (Phantom / Solflare / Backpack) for authorization,
 - a **session dashboard** (the chain read — see [Discovery](#discovery)),
 - `xterm.js`, driven over a WebSocket to the gateway with the existing
-  `MoseyClient`.
+  `MoseyClient`,
+- **management controls** — transfer ownership, grant / revoke access,
+  bump epoch (see [Session management](#session-management-governance)).
 
 The browser holds nothing but the current WS session.
 
@@ -125,9 +148,35 @@ fresh, scoped `W → K` delegation the gateway's `K` is useless. (This is
 the `K_c` mechanism from the wallet-auth design, held gateway-side per
 login instead of in the browser.)
 
-This is also what makes the gateway naturally **single- or multi-user**:
-whoever logs in supplies their own delegation, and the gateway attaches
-with *their* on-chain access. A personal gateway just has one user.
+The delegation is **scoped tight**: caps `{write, resize}` for an
+interactive attach (or `{}` for a view-only one — a per-attach toggle),
+and **never `forge`** — the gateway has no business re-delegating access.
+Its `not-after` defaults to **~12–24h** (`--delegation-ttl`). Because
+expiry gates only *new* handshakes (a live attach keeps running past it,
+per the wallet-auth model), the user re-signs only on **reconnect /
+resume**, never mid-session.
+
+### Multi-user
+
+The gateway is a **multi-user / team service**: whoever logs in supplies
+their own `W → K`, and the gateway attaches with *their* on-chain access,
+so each user sees only their own sessions. That makes a few things
+load-bearing:
+
+- **Per-connection isolation.** All attach state (`K`, streams, PTY
+  bytes) is scoped to one logged-in WS connection; nothing is shared
+  across users. Two users attaching the *same* session is the **host's**
+  existing [multi-client](multi-client.md) concern, not the gateway's —
+  the gateway just multiplexes independent connections.
+- **Per-user resource limits.** Cap concurrent attaches / streams per
+  wallet so one user can't exhaust the gateway.
+- **Two gates, defense in depth.** Tailscale ACLs decide which *devices*
+  reach the gateway; the wallet + chain decide which *sessions* a user
+  may attach. A tailnet device with no valid delegation can reach the
+  gateway but attach to nothing — there is no ambient authority.
+- **Trust surface.** A shared gateway holds several users' `K`s and sees
+  several users' plaintext, so it is trusted by its whole team; keep each
+  `K` ephemeral-per-login, scope the delegations, and sandbox the process.
 
 ## Discovery
 
@@ -137,14 +186,51 @@ with *their* on-chain access. A personal gateway just has one user.
   the Solana RPC the project already depends on.
 - **Where the host is.** The **gateway** resolves it like any libp2p
   node: a tailnet/LAN address directly, or `FindPeer(session_key)` over
-  the DHT (optionally hinted by the host's on-chain `relay` pointer for a
-  NAT'd host). The browser resolves nothing.
+  the DHT — which returns the host's current addresses (direct *or*
+  relay-circuit) the normal way. The browser resolves nothing.
 
-The host's on-chain `relay` pointer (an optional `Session` field — a
-small program change) matters only for NAT'd-elsewhere hosts that use a
-specific relay; hosts on your tailnet or on the public swarm don't need
-it. The boundary remains: **chain = who owns · who may attach · (which
-relay); off-chain = the host's current address.**
+This means **no on-chain address data and no program change.** The
+boundary is simply **chain = who owns · who may attach; off-chain = the
+host's current address, via the DHT.** (An earlier draft proposed an
+on-chain `Session.relay` pointer; `FindPeer` makes it redundant.)
+
+> Implementation note: mosey does **not** resolve a bare peer id today —
+> the libp2p backend bootstraps a kad-DHT but never wires it into dialing
+> (`b.host` is the raw host, not a `RoutedHost`, and the DHT handle isn't
+> retained — `transport/libp2p/libp2p.go`). So the gateway's dialer needs
+> a small addition: `dht.FindPeer(session_key)` before `Connect` (or wrap
+> the host as a `RoutedHost`). A configured-address escape hatch covers
+> P0 / tailnet hosts before that lands.
+
+## Session management (governance)
+
+The web frontend is not only a terminal — it is also a **management
+console** for the sessions a connected wallet owns. The same wallet
+that authorizes attachment also drives the on-chain
+[program operations](wallet-auth.md#on-chain-program-anchor), which the
+CLI already exposes as `mosey session …` / `mosey grant`:
+
+| Control | Mechanism | Wallet action |
+|---|---|---|
+| **Transfer ownership** | `transfer_ownership(new_owner)` | signs a **transaction** |
+| **Grant (on-chain)** | `grant(grantee, caps, expiry)` — nothing to deliver, grantee attaches with just their wallet | signs a **transaction** |
+| **Grant (off-chain)** | a `W → grantee` delegation blob / URL / QR (bearer or `--to`) | signs a **message** (`signMessage`) |
+| **Revoke** | `revoke(grantee)` (closes the Grant PDA) | signs a **transaction** |
+| **Bump epoch** | `bump_epoch()` (mass-revoke) | signs a **transaction** |
+| **Register** | `register_session` — usually done at launch, optionally here | signs a **transaction** |
+
+The crucial property: these are **signed by the owner's wallet directly
+in the browser** — Phantom et al. sign Solana *transactions*, not just
+messages. So the **gateway never holds owner authority**: it only *builds
+the unsigned transaction* (reusing [`walletsolana`](../../walletsolana/)'s
+existing hand-rolled `TransferOwnership` / `Grant` / `BumpEpoch` /
+`RegisterSession` builders), hands it to the browser for the wallet to
+sign, and submits it. The off-chain grant reuses the canonical-delegation
+`signMessage` flow already in the loopback signer.
+
+Because each user only ever sees and governs the sessions their wallet
+owns (the dashboard is keyed by wallet), governance is per-user in the
+multi-user gateway with no extra isolation work.
 
 ## Hosts and NAT
 
@@ -185,24 +271,36 @@ the agent model, with even less to run.
 - `cmd/mosey/web.go` (**new**) — `mosey web`: the gateway. Reuses the
   [`attach`](../../attach/) libp2p client + wallet handshake to reach
   hosts, and serves an HTTP/WS endpoint (UI + the `/mosey/*` streams) to
-  the browser. Mints `K` per login and runs the host handshake with the
-  browser-supplied `W → K`.
-- `webui/` (**new**) — the web UI (xterm + wallet connect + dashboard),
-  served by `mosey web`. Browser↔gateway reuses `MoseyClient`'s WebSocket
-  transport as-is; new code is only wallet-login + dashboard glue.
-- [`clients/typescript`](../../clients/typescript/) — the
-  browser-side login/dashboard glue; the transport layer is unchanged.
+  the browser. Mints `K` per login, runs the host handshake with the
+  browser-supplied `W → K`, scopes all attach state per WS connection
+  (multi-user isolation), and enforces per-wallet resource limits.
+- `webui/` (**new**) — the web UI: xterm + wallet connect + dashboard +
+  the **management console** (transfer / grant / revoke / bump). The
+  browser↔gateway terminal path reuses `MoseyClient`'s WebSocket transport
+  as-is; new code is wallet-login, the dashboard, and the governance forms.
+- **Gateway governance endpoints** — `mosey web` builds *unsigned*
+  transactions for transfer / grant / revoke / bump / register (reusing
+  [`walletsolana`](../../walletsolana/)'s existing builders), returns them
+  for the browser wallet to sign, and submits the signed result. The
+  off-chain grant reuses the canonical-delegation `signMessage` path. The
+  gateway never holds owner authority.
+- [`transport/libp2p`](../../transport/libp2p/) — wire the DHT into
+  dialing so the gateway can resolve a bare `session_key`
+  (`dht.FindPeer` / `RoutedHost`); not done today (see the
+  [Discovery](#discovery) note).
+- [`clients/typescript`](../../clients/typescript/) — browser-side login,
+  dashboard, and governance glue; the transport layer is unchanged.
 - [`walletsolana`](../../walletsolana/) — owner/grantee-indexed
-  `getProgramAccounts` for the dashboard.
-- [`programs/mosey-session`](../../programs/) — *optional* `relay` field
-  on `Session` (only for NAT'd-elsewhere hosts pinned to a relay).
+  `getProgramAccounts` for the dashboard; the tx builders are reused for
+  governance.
 - **Deployment** — a `Dockerfile` for `mosey web` and a short runbook for
   `tailscale serve` (HTTPS + MagicDNS); `Headscale` noted for a
   no-third-party tailnet.
 
 What this design **drops** versus the superseded drafts: js-libp2p in the
 browser, browser-side `K_c` + IndexedDB, all WebRTC/transparent-relay
-machinery, and any user-maintained relays.
+machinery, any user-maintained relays, and the on-chain `Session.relay`
+pointer (a `FindPeer` makes it redundant).
 
 ## Phasing
 
@@ -217,30 +315,52 @@ P1  ── Hosts elsewhere ─────────────────�
       gateway inherits attach's public-swarm + DCUtR path to NAT'd hosts
       ✦ reach a session running anywhere, no relays you maintain
 
-P2  ── Chain-driven discovery ────────────────────────────────────────
-      wallet dashboard (which sessions); optional Session.relay pointer
-      ✦ connect wallet → pick a terminal
+P2  ── Chain-driven discovery + multi-user ───────────────────────────
+      gateway wires DHT FindPeer (resolve a bare session_key)
+      wallet dashboard (which sessions); per-connection isolation +
+        per-wallet resource limits
+      ✦ connect wallet → pick a terminal; team-ready
 
-P3  ── Multi-party + ergonomics ──────────────────────────────────────
-      grantee flows; multi-user gateway; reconnect / pty-resume in the UI
+P3  ── Governance console ────────────────────────────────────────────
+      transfer / grant (on- + off-chain) / revoke / bump-epoch in the UI
+      gateway builds unsigned txns; wallet signs; gateway submits
+      ✦ manage sessions from the browser, owner authority stays in the wallet
+
+P4  ── Ergonomics ────────────────────────────────────────────────────
+      grantee flows end-to-end; reconnect / pty-resume in the UI
 ```
 
 P0 is small — it is `mosey attach` to a reachable host with a web
 front-end, behind your VPN. Everything after is additive.
 
+## Decisions made
+
+- **Multi-user / team gateway** (not single-user) — per-login `W → K`
+  scopes each user to their own sessions; the gateway adds per-connection
+  isolation + per-wallet resource limits.
+- **`W → K` scope:** caps `{write, resize}` (or `{}` view-only), **never
+  `forge`**; `not-after` default **~12–24h** (`--delegation-ttl`),
+  re-signed on reconnect (a live attach outlives expiry).
+- **VPN:** gateway is VPN-agnostic plain HTTP/WS; the front **must
+  terminate HTTPS** (wallets need a secure context). Tailscale
+  (`tailscale serve`) is the recommended default; Headscale / any HTTPS
+  reverse proxy also work.
+- **No `Session.relay` / no program change for discovery** — the gateway
+  resolves `session_key` via `dht.FindPeer` (needs wiring; see Discovery).
+- **No-VPN / public-gateway tier is a non-goal** — it would reintroduce
+  the public exposure + browser-relay problems this design removed.
+
 ## Open questions
 
-- **Single- vs multi-user gateway.** Personal (one wallet) is the default;
-  multi-user falls out of per-login `W → K`, but session isolation and
-  resource limits in a shared gateway need design.
-- **`W → K` scope + refresh.** Caps and `not-after`, and whether a long
-  session silently re-prompts the wallet on expiry.
-- **VPN choice.** Tailscale is the assumed default (`tailscale serve` for
-  HTTPS); document Headscale for self-hosting the control plane, and the
-  generic "any reverse-proxy/VPN that fronts the gateway" path.
-- **Is `Session.relay` worth keeping?** Tailnet + public swarm cover most
-  hosts; the on-chain relay pointer may not earn its program change.
-- **Agent-less is already true here** — but the old "open to any browser
-  with your wallet" reach is what we gave up; revisit if a
-  no-VPN/public-gateway tier is ever wanted (it reintroduces the public
-  exposure this design removed).
+- **Per-wallet resource-limit policy.** Concrete caps (concurrent attaches
+  / streams, RPC rate) for a shared gateway.
+- **Long-session expiry UX.** A live attach outlives `not-after`, but
+  reconnect/resume needs a fresh `W → K`; how/when to prompt without
+  surprising the user mid-work.
+- **Governance UX depth.** Which ops to surface first (transfer + grant
+  are the obvious P3 start), confirmation/undo affordances for
+  irreversible ones (`transfer_ownership`, `bump_epoch`), and whether
+  on-chain grant vs off-chain blob is the UI default.
+- **Tailscale ACLs vs wallet auth overlap.** How much to lean on tailnet
+  ACLs as a coarse pre-filter vs. treating the wallet as the only real
+  gate.
