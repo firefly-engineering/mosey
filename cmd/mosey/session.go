@@ -28,6 +28,11 @@ import (
 	"github.com/firefly-engineering/mosey/walletsolana"
 )
 
+// sessionTxTimeout bounds each on-chain session op (build + submit +
+// confirm). Generous because devnet confirmation can lag — on timeout the
+// transaction is already submitted and usually lands shortly after.
+const sessionTxTimeout = 90 * time.Second
+
 func runSession(args []string, stdout, stderr *os.File) int {
 	if len(args) < 1 {
 		fmt.Fprintln(stderr, sessionUsage)
@@ -176,7 +181,7 @@ func runSessionRegister(args []string, stdout, stderr *os.File) int {
 		fmt.Fprintln(stderr, "mosey session register:", err)
 		return 2
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), sessionTxTimeout)
 	defer cancel()
 	sig, err := src.RegisterSession(ctx, owner, sessionKey)
 	if err != nil {
@@ -214,7 +219,7 @@ func runSessionTransfer(args []string, stdout, stderr *os.File) int {
 	if src == nil {
 		return code
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), sessionTxTimeout)
 	defer cancel()
 	sig, err := src.TransferOwnership(ctx, owner, sessionPub, newOwnerPub)
 	if err != nil {
@@ -238,7 +243,7 @@ func runSessionBumpEpoch(args []string, stdout, stderr *os.File) int {
 	if src == nil {
 		return code
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), sessionTxTimeout)
 	defer cancel()
 	sig, err := src.BumpEpoch(ctx, owner, sessionPub)
 	if err != nil {
@@ -283,7 +288,7 @@ func runSessionGrant(args []string, stdout, stderr *os.File) int {
 	if src == nil {
 		return code
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), sessionTxTimeout)
 	defer cancel()
 	sig, err := src.Grant(ctx, owner, sessionPub, grantee, uint8(caps), expiry)
 	if err != nil {

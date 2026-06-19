@@ -409,7 +409,9 @@ func (s *Source) confirmTransaction(ctx context.Context, sig string) error {
 		}
 		select {
 		case <-ctx.Done():
-			return fmt.Errorf("walletsolana: confirming %s: %w", sig, ctx.Err())
+			// The transaction was already submitted (we have its
+			// signature); we just stopped waiting for confirmation.
+			return fmt.Errorf("walletsolana: transaction %s submitted but not confirmed in time — it may still land; check it on an explorer: %w", sig, ctx.Err())
 		case <-ticker.C:
 		}
 	}
