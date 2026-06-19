@@ -20,6 +20,7 @@
 
 - [Wallet authentication](wallet-auth.md)
 - [Wallet auth: implementation plan](wallet-auth-impl.md)
+- [Browser web-attach](web-attach.md)
 
 # Project
 
