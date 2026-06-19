@@ -362,7 +362,7 @@ func (s *Source) submit(ctx context.Context, feePayer pubkey, ixs []instruction,
 	if err != nil {
 		return "", err
 	}
-	msg, err := compileMessage(feePayer, bh, ixs)
+	msg, err := compileMessage(feePayer, bh, withPriority(ixs))
 	if err != nil {
 		return "", err
 	}

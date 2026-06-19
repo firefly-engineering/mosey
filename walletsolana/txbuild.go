@@ -4,7 +4,42 @@ import (
 	"context"
 	"crypto/ed25519"
 	"encoding/binary"
+
+	"github.com/firefly-engineering/mosey/wallet"
 )
+
+// computeBudgetProgramID is the SPL ComputeBudget program.
+var computeBudgetProgramID = func() pubkey {
+	b, err := wallet.DecodeBase58("ComputeBudget111111111111111111111111111111")
+	if err != nil || len(b) != 32 {
+		panic("walletsolana: bad ComputeBudget program id")
+	}
+	var p pubkey
+	copy(p[:], b)
+	return p
+}()
+
+// priorityIxs returns ComputeBudget instructions attaching a small
+// priority fee (and an explicit unit limit), so a transaction lands on a
+// busy cluster instead of being dropped. The cost is negligible
+// (micro-lamports); the win is reliable inclusion on devnet/mainnet.
+func priorityIxs() []instruction {
+	limit := make([]byte, 5)
+	limit[0] = 0x02 // SetComputeUnitLimit
+	binary.LittleEndian.PutUint32(limit[1:], 200_000)
+	price := make([]byte, 9)
+	price[0] = 0x03 // SetComputeUnitPrice (micro-lamports per compute unit)
+	binary.LittleEndian.PutUint64(price[1:], 50_000)
+	return []instruction{
+		{programID: computeBudgetProgramID, data: limit},
+		{programID: computeBudgetProgramID, data: price},
+	}
+}
+
+// withPriority prepends the ComputeBudget priority instructions to ixs.
+func withPriority(ixs []instruction) []instruction {
+	return append(priorityIxs(), ixs...)
+}
 
 // This file factors the owner-signed instructions into pubkey-only
 // builders shared by two paths: the local-key sign+submit methods in
@@ -128,7 +163,7 @@ func (s *Source) buildUnsigned(ctx context.Context, feePayer pubkey, ixs []instr
 	if err != nil {
 		return nil, err
 	}
-	msg, err := compileMessage(feePayer, bh, ixs)
+	msg, err := compileMessage(feePayer, bh, withPriority(ixs))
 	if err != nil {
 		return nil, err
 	}
