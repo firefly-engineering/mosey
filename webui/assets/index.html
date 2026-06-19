@@ -9,6 +9,14 @@
       href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.css"
     />
     <style>
+      /* Vendored symbols-only nerd font: supplies the private-use-area
+         glyphs (powerline, icons) that a plain monospace lacks, without
+         depending on anything installed on the client. */
+      @font-face {
+        font-family: "Symbols Nerd Font";
+        src: url("fonts/SymbolsNerdFontMono-Regular.ttf") format("truetype");
+        font-display: swap;
+      }
       html,
       body {
         margin: 0;
@@ -104,16 +112,17 @@
         return a;
       };
 
-      // Nerd-font glyphs (powerline arrows, icons) live in Unicode
-      // private-use areas, so the terminal needs a font that ships them.
-      // We name common nerd-font families: if one is installed locally
-      // (it is, for a nerd-font shell) the browser uses it. Override with
-      // ?font=<Family Name> for a specific install.
+      // Regular text uses a clean system monospace; the vendored
+      // "Symbols Nerd Font" is the LAST fallback, so per-glyph fallback
+      // routes only the private-use-area icon codepoints to it (and never
+      // regular characters — which is what caused the per-character
+      // underline artifact). Override the text font with ?font=<Family>
+      // (e.g. your full patched nerd font for ligatures).
       const fontOverride = new URLSearchParams(location.search).get("font");
       const fontFamily =
         (fontOverride ? `"${fontOverride}", ` : "") +
-        `"MesloLGS NF", "FiraCode Nerd Font", "JetBrainsMono Nerd Font", ` +
-        `"Hack Nerd Font", "Symbols Nerd Font Mono", ui-monospace, Menlo, Monaco, monospace`;
+        `ui-monospace, "SF Mono", Menlo, Monaco, Consolas, ` +
+        `"DejaVu Sans Mono", "Symbols Nerd Font", monospace`;
       const term = new Terminal({
         cursorBlink: true,
         convertEol: false,
