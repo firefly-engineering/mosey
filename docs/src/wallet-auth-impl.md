@@ -264,7 +264,7 @@ Built and tested in this repo (Go `go test ./...`, TS `vitest`, Rust
 | A5 (client) | `runWalletHandshake`, `WalletAuthConfig`, `Stream.whenClosed` | **TS e2e against a live `mosey launch`** (happy + reject) |
 | A5 (loopback) | `mosey wallet sign` 127.0.0.1 authorizer + wallet SPA | handler tests + **live loopback→attach**: real wallet signs → owner delegates → attach with write+resize; view-only negative enforced. raw-bytes `signMessage` verified on Phantom + Solflare + Backpack |
 | B1 | `programs/mosey-session` Anchor program | **`just anchor-test`** (litesvm in-process: 7 cases incl. negatives) + **`just anchor-build`** `.so` + **deployed to devnet** (`D64mDEWvdThvEXMaxpeLRAP94wst2WcMiyzb3VqZ23T7`) |
-| B2 | `walletsolana` Solana `SnapshotSource` | unit w/ fake RPC caller + **live devnet read** (round-trip below) |
+| B2 | `walletsolana` Solana `SnapshotSource` (poll + `accountSubscribe` push) | unit (fake RPC + fake WS) + **live devnet read** + **live push** (1.3s sweep vs 2m poll) |
 | B3 (off-chain) | `mosey grant` (bearer + `--to`) | **e2e: grant → attach** |
 | B3 (on-chain) | `walletsolana` hand-rolled tx + `mosey session register/transfer/bump-epoch/grant` | unit (wire format) + **all four commands live on devnet** |
 | C | strict-parser fuzz; 8-hop depth cap; owner/admin scoping fix | fuzz (8.5M execs) + unit |
@@ -298,8 +298,13 @@ workspace, not by design:
   loopback→attach loop was also exercised end to end with a real wallet
   (owner delegates write+resize to a connection key → attach succeeds;
   the view-only variant connects but input is rejected).
-- **`accountSubscribe` push refresh** — the poll backstop (the
-  correctness floor) is implemented; WS push is a latency optimization.
+- **`accountSubscribe` push refresh** — **done.** `Source.Run` subscribes
+  over WebSocket to the Session + known Grant accounts; a notification
+  triggers an immediate `Refresh` (revocation/transfer/bump in ~one slot),
+  with the poll as backstop for new grants + missed notifications +
+  dead-socket reconnect. Unit-tested (fake conn, poll pinned to 1h) and
+  **verified live on devnet**: a bump_epoch sweep hit the snapshot 1.3s
+  after the tx, against a 2-minute poll.
 - **Nix flake** — the dev shell pulls the toolbox `solana-toolchain`
   (solana-cli + anchor + a wrapped, host-independent `cargo-build-sbf`);
   `just anchor-build` builds the program **offline** with no host rustup
