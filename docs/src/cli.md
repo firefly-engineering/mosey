@@ -5,6 +5,7 @@ All functionality lives behind one binary, `mosey`.
 ```
 mosey launch  [flags] -- PROGRAM [ARGS...]
 mosey attach  [flags] ENDPOINT
+mosey web     [flags] --target ENDPOINT
 mosey control SUBCMD [flags] ENDPOINT [...]
 mosey cert    SUBCMD [flags] ...
 ```
@@ -48,6 +49,24 @@ printed (a multiaddr or `https://host:port`).
 Reconnect-with-replay is automatic: a transient network blip pauses
 the local terminal for a few seconds, then resumes from the last
 byte rendered. See [reattach](reattach.md).
+
+## `mosey web`
+
+Serves a browser terminal that bridges to a mosey host over libp2p — a
+self-hosted gateway. Front it with an HTTPS proxy (e.g. `tailscale
+serve`); browser wallets require a secure context. See
+[web-attach](web-attach.md).
+
+| Flag | Purpose |
+|---|---|
+| `--listen=ADDR` | HTTP listen address (default `127.0.0.1:8080`). The HTTPS front owns TLS. |
+| `--target=ENDPOINT` | Host to bridge to (a multiaddr, `/p2p/<session-key>`, or `https://…`). Required except in multi-session mode. |
+| `--secret` / `--cert=…` / `--wallet-grant=…` | Static auth: one host credential for every browser (gated by the network perimeter). |
+| `--wallet-login` | Per-browser wallet login: each user signs a `W→K` delegation in the page and attaches with their own on-chain access. |
+| `--session=BASE58` | Fixed-session `--wallet-login`: the session key the target host runs. |
+| `--wallet-rpc=URL` / `--wallet-program=ID` | Enable the dashboard + multi-session attach (the browser lists and picks a session); supersedes `--session`/`--target`. |
+| `--delegation-ttl` | Validity of each `W→K` delegation (default 16h; re-signed on reconnect). |
+| `--insecure-tls` / `--no-p2p-bootstrap` | As in `attach`. |
 
 ## `mosey control`
 
