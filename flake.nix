@@ -39,22 +39,13 @@
           # + nix tooling + protobuf for the cert/control proto regen).
           default = pkgs.mkShell {
             packages =
-              with pkgs;
-              [
-                # Nix tooling
-                nixfmt-tree
-                nil
-                # protoc + Go plugin for control.proto / cert.proto / auth.proto
-                protobuf
-                protoc-gen-go
-                # Test runner with cleaner output + per-package summaries
-                gotestsum
-              ]
-              ++ (with toolbox.packages.${system}; [
+              (with toolbox.packages.${system}; [
                 beadwork
                 go-toolchain
                 just
                 mdbook-toolchain
+                nix-toolchain
+                proto-toolchain
                 vcs-toolchain
                 # On-chain (wallet auth, Track B): solana-cli + anchor +
                 # an offline, host-independent cargo-build-sbf. `just
