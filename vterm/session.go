@@ -463,10 +463,17 @@ func (s *Session) pumpOutput() {
 	for {
 		n, err := s.ptyf.Read(buf)
 		if n > 0 {
-			chunk := make([]byte, n)
-			copy(chunk, buf[:n])
-			s.output.Write(chunk)
-			s.broadcast(chunk)
+			// Answer Device Attribute queries directly, and strip them
+			// from the bytes attachers see (so their terminals don't also
+			// reply). out/resp are freshly allocated.
+			out, resp := s.daResp.process(buf[:n])
+			if len(resp) > 0 {
+				_, _ = s.ptyf.Write(resp)
+			}
+			if len(out) > 0 {
+				s.output.Write(out)
+				s.broadcast(out)
+			}
 		}
 		if err != nil {
 			if err != io.EOF {

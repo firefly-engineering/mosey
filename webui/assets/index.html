@@ -134,6 +134,21 @@
       term.open(document.getElementById("terminal"));
       fit.fit();
 
+      // Prefer the WebGL renderer: it draws underlines/decorations as
+      // continuous lines, where the default DOM renderer can leave
+      // per-cell gaps (e.g. under eza's hyperlinked filenames). Falls
+      // back to the DOM renderer if WebGL is unavailable.
+      try {
+        const { WebglAddon } = await import(
+          "https://cdn.jsdelivr.net/npm/@xterm/addon-webgl@0.18.0/+esm"
+        );
+        const webgl = new WebglAddon();
+        webgl.onContextLoss(() => webgl.dispose());
+        term.loadAddon(webgl);
+      } catch (e) {
+        console.warn("mosey: WebGL renderer unavailable, using DOM:", e);
+      }
+
       function connect(token) {
         const wsURL = new URL("ws", location.href);
         wsURL.protocol = location.protocol === "https:" ? "wss:" : "ws:";

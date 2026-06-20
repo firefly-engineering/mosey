@@ -48,6 +48,10 @@ type Session struct {
 	// or a disconnect.
 	output *streambuf.OutputRing
 
+	// daResp answers terminal Device Attribute queries (see queries.go);
+	// only touched from pumpOutput, so it needs no lock.
+	daResp daResponder
+
 	mu       sync.Mutex
 	nextID   int64
 	clients  map[int64]*sessionClient
