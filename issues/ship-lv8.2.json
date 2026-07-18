@@ -1,0 +1,15 @@
+{
+  "assignee": "",
+  "blocked_by": [],
+  "blocks": [],
+  "created": "2026-07-18T05:48:55Z",
+  "description": "Replace buildClientTransport call sites with DialClient.",
+  "id": "ship-lv8.2",
+  "labels": [],
+  "parent": "ship-lv8",
+  "priority": 2,
+  "status": "open",
+  "title": "Migrate attach + web-static to DialClient",
+  "type": "task",
+  "updated_at": "2026-07-18T05:48:55Z"
+}
