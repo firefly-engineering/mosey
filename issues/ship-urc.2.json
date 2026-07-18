@@ -1,0 +1,15 @@
+{
+  "assignee": "",
+  "blocked_by": [],
+  "blocks": [],
+  "created": "2026-07-18T05:48:54Z",
+  "description": "One converting adapter mapping cert CapsBitOwner/Write/Resize -\u003e (owner, caps.Caps), owner=\u003eAllCaps. Co-locate with the frozen CapsBit* consts in cert. wallet is a no-op (already caps layout).",
+  "id": "ship-urc.2",
+  "labels": [],
+  "parent": "ship-urc",
+  "priority": 2,
+  "status": "open",
+  "title": "cert.Claim.Grant() adapter",
+  "type": "task",
+  "updated_at": "2026-07-18T05:48:54Z"
+}
