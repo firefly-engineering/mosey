@@ -25,7 +25,7 @@ func TestSessionsByOwner(t *testing.T) {
 		ProgramID:  "TestProgram1111111111111111111111111111111",
 		SessionKey: key(t),
 		Now:        func() time.Time { return time.Unix(2_000_000, 0) },
-		call: func(_ context.Context, method string, params []any) (json.RawMessage, error) {
+		Call: func(_ context.Context, method string, params []any) (json.RawMessage, error) {
 			if method != "getProgramAccounts" {
 				t.Fatalf("unexpected rpc method %q", method)
 			}

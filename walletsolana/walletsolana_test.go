@@ -122,7 +122,7 @@ func newTestSource(t *testing.T, sessionKey ed25519.PublicKey, now func() time.T
 		SessionKey:   sessionKey,
 		MaxStaleness: 30 * time.Second,
 		Now:          now,
-		call: func(_ context.Context, method string, _ []any) (json.RawMessage, error) {
+		Call: func(_ context.Context, method string, _ []any) (json.RawMessage, error) {
 			if callErr != nil {
 				return nil, callErr
 			}

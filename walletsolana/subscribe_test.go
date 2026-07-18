@@ -74,7 +74,7 @@ func TestRunPushTriggersRefresh(t *testing.T) {
 		PollInterval: time.Hour, // a refresh can only come from the push path
 		WSEndpoint:   "wss://test",
 		Now:          now,
-		call: func(_ context.Context, method string, _ []any) (json.RawMessage, error) {
+		Call: func(_ context.Context, method string, _ []any) (json.RawMessage, error) {
 			if method != "getProgramAccounts" {
 				t.Errorf("unexpected rpc method %q", method)
 			}

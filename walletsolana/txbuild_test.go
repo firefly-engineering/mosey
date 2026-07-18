@@ -36,7 +36,7 @@ func TestCompileUnsignedTx(t *testing.T) {
 	src, err := New(Options{
 		ProgramID:  wallet.EncodeBase58(progPubKey),
 		SessionKey: sessionPubKey,
-		call: func(context.Context, string, []any) (json.RawMessage, error) {
+		Call: func(context.Context, string, []any) (json.RawMessage, error) {
 			return nil, nil // ix building needs no RPC
 		},
 	})
