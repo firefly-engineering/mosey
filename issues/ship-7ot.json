@@ -1,0 +1,14 @@
+{
+  "assignee": "",
+  "blocked_by": [],
+  "blocks": [],
+  "created": "2026-07-18T05:48:54Z",
+  "description": "Hoist resolveCaps + the co-owner rule (rootIsOwner \u0026\u0026 caps==AllCaps, auth/wallet.go:235) and Fold orchestration behind the wallet seam. NOT yet grilled. Must build on the unified caps type -\u003e depends on Epic #1.",
+  "id": "ship-7ot",
+  "labels": [],
+  "priority": 3,
+  "status": "open",
+  "title": "Pull caps resolution / Fold policy behind wallet seam (candidate #5, ungrilled)",
+  "type": "task",
+  "updated_at": "2026-07-18T05:48:54Z"
+}
