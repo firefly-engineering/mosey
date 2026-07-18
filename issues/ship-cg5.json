@@ -1,0 +1,14 @@
+{
+  "assignee": "",
+  "blocked_by": [],
+  "blocks": [],
+  "created": "2026-07-18T05:48:54Z",
+  "description": "New root signing/ pkg: Prepare(fields,ttl)/Complete(token,sig)-\u003e(Delegation,Fields). Module owns nonce + -1min skew + now+ttl. Injected TokenStore (persistable); secrets NEVER enter it. Dedups the 3 browser/CLI signing flows. See docs/adr/0002. Top-recommendation candidate.",
+  "id": "ship-cg5",
+  "labels": [],
+  "priority": 1,
+  "status": "open",
+  "title": "Extract signing session package (ADR-0002)",
+  "type": "epic",
+  "updated_at": "2026-07-18T05:48:54Z"
+}
