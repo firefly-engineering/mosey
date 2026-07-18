@@ -37,10 +37,15 @@ func (s *clientStream) Close() error {
 // what they send us. Symmetric with libp2p's CloseWrite.
 func (s *clientStream) CloseWrite() error { return s.writer.Close() }
 
-// RemoteID returns the dialed host:port. HTTP/2 connections don't
-// carry a richer peer identity in h2c mode; HTTPS variants can
-// surface the TLS peer cert subject when that backend lands.
+// RemoteID returns the dialed host:port, a log tag. HTTP/2
+// connections don't carry a richer peer identity in h2c mode; HTTPS
+// variants can surface the TLS peer cert subject when that backend
+// lands.
 func (s *clientStream) RemoteID() string { return s.remote }
+
+// CorrelationID returns "" — the dialer's own streams are never
+// looked up in a server-side identity map.
+func (s *clientStream) CorrelationID() string { return "" }
 
 var _ transport.Stream = (*clientStream)(nil)
 
@@ -48,9 +53,10 @@ var _ transport.Stream = (*clientStream)(nil)
 // drain the request body, writes go through the response body
 // (with explicit flushing so bytes leave the server promptly).
 type serverStream struct {
-	reader io.ReadCloser
-	writer writeFlusher
-	remote string
+	reader      io.ReadCloser
+	writer      writeFlusher
+	remote      string
+	correlation string
 
 	closeOnce sync.Once
 }
@@ -76,9 +82,15 @@ func (s *serverStream) Close() error {
 func (s *serverStream) CloseWrite() error { return transport.ErrUnsupported }
 
 // RemoteID returns the client's [http.Request.RemoteAddr] — typically
-// the peer's IP:port. HTTPS / mTLS deployments can plumb in cert
-// subject identification later.
+// the peer's IP:port — as a log tag.
 func (s *serverStream) RemoteID() string { return s.remote }
+
+// CorrelationID returns the client's RemoteAddr: HTTP/2 multiplexes
+// every stream of one connection over the same address, so it links
+// streams at per-connection granularity — the weakest rung, spoofable
+// only by controlling routing. HTTPS / mTLS deployments can plumb in
+// cert-subject correlation later. See docs/adr/0004.
+func (s *serverStream) CorrelationID() string { return s.correlation }
 
 var _ transport.Stream = (*serverStream)(nil)
 

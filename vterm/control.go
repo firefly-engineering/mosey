@@ -21,7 +21,8 @@ import (
 // down. Always Closes the stream — backends decide whether that
 // translates to a clean half-close or a forceful tear-down.
 func (s *Session) handleControl(stream transport.Stream) {
-	remote := stream.RemoteID()
+	remote := stream.RemoteID()    // log tag only
+	corr := stream.CorrelationID() // links this control stream to a PTY client
 	identity := auth.IdentityOf(stream)
 	s.logger.Info("control opened", "peer", remote, "role", identity.Label)
 	defer func() {
@@ -44,7 +45,7 @@ func (s *Session) handleControl(stream transport.Stream) {
 				s.logger.Debug("control resize denied (no Resize cap)", "peer", remote, "role", identity.Label)
 				continue
 			}
-			if err := s.applyResize(remote, payload.Resize); err != nil {
+			if err := s.applyResize(corr, payload.Resize); err != nil {
 				s.logger.Warn("control resize", "peer", remote, "err", err)
 			}
 		case *api.ControlMessage_Signal:
@@ -68,8 +69,8 @@ func (s *Session) handleControl(stream transport.Stream) {
 			prev := s.setMode(newMode)
 			s.logger.Info("mode switched", "peer", remote, "from", prev, "to", newMode)
 		case *api.ControlMessage_Demote:
-			if !s.demoteRemote(remote) {
-				s.logger.Debug("control demote: no PTY client for remote", "peer", remote)
+			if !s.demoteCorrelation(corr) {
+				s.logger.Debug("control demote: no PTY client for peer", "peer", remote)
 				continue
 			}
 			s.logger.Info("client self-demoted to observer", "peer", remote)
@@ -115,17 +116,17 @@ func (s *Session) handleControl(stream transport.Stream) {
 	}
 }
 
-// applyResize records remote's reported geometry against the
+// applyResize records the peer's reported geometry against the
 // corresponding session client and re-derives the PTY's effective
 // size — min(cols, rows) across every client that has reported. A
 // resize of 0×0 from any client is ignored (the kernel accepts it
 // but curses apps go haywire).
-func (s *Session) applyResize(remote string, r *api.Resize) error {
+func (s *Session) applyResize(correlation string, r *api.Resize) error {
 	cols, rows := r.GetCols(), r.GetRows()
 	if cols == 0 || rows == 0 {
 		return fmt.Errorf("resize ignored: zero dimension (cols=%d rows=%d)", cols, rows)
 	}
-	appliedCols, appliedRows, err := s.applyResizeForRemote(remote, cols, rows)
+	appliedCols, appliedRows, err := s.applyResizeForCorrelation(correlation, cols, rows)
 	if err != nil {
 		return err
 	}

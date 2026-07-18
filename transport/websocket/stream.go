@@ -18,8 +18,9 @@ import (
 // pumpStream shape (one goroutine reads, another writes). We don't
 // take any locks of our own.
 type stream struct {
-	conn   *websocket.Conn
-	remote string
+	conn        *websocket.Conn
+	remote      string
+	correlation string
 
 	// curReader holds the io.Reader for the current binary message
 	// while bytes from it remain. Refreshed when EOF is reached.
@@ -78,20 +79,25 @@ func (s *stream) Close() error {
 // caller from quietly believing they sent a one-way FIN.
 func (s *stream) CloseWrite() error { return transport.ErrUnsupported }
 
-// RemoteID returns a string identifying the remote peer:
+// RemoteID returns a log tag for the remote peer:
+//
+//   - On the server side: the peer's remote address (host:port).
+//   - On the client side: "ws://host" or "wss://host" — the URL
+//     base that was dialed.
+//
+// Purely for logs — auth correlation reads [stream.CorrelationID].
+func (s *stream) RemoteID() string { return s.remote }
+
+// CorrelationID returns the per-dialer correlation handle:
 //
 //   - On the server side: "ws-peer:<token>" derived from the
-//     `Sec-WebSocket-Protocol: mosey-peer-<token>` value the
-//     dialer offered. Stable across repeated connections from the
-//     same backend, so [auth.Wrap] correlates the auth handshake
-//     stream with subsequent application streams.
-//
-//   - On the client side: "ws://host" or "wss://host" — the URL
-//     base that was dialed. The client doesn't need a stable
-//     per-stream peer id (it knows its own identity via
-//     [auth.Wrapped.LocalIdentity]); the URL is the most useful
-//     thing to surface in logs.
-func (s *stream) RemoteID() string { return s.remote }
+//     `Sec-WebSocket-Protocol: mosey-peer-<token>` value the dialer
+//     offered — a >=128-bit random token, stable across every
+//     connection from the same backend, so [auth.Wrap] links the
+//     auth handshake stream to subsequent application streams.
+//   - On the client side: "" — the dialer's own streams are never
+//     looked up in a server-side identity map.
+func (s *stream) CorrelationID() string { return s.correlation }
 
 // normalizeReadErr maps gorilla's "normal close" / "going away"
 // codes to io.EOF so the caller sees a clean end-of-stream rather

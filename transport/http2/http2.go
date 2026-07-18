@@ -287,9 +287,10 @@ func (b *Backend) serveHTTP(w http.ResponseWriter, r *http.Request) {
 	flusher.Flush()
 
 	stream := &serverStream{
-		reader: r.Body,
-		writer: writeFlusher{w: w, f: flusher},
-		remote: r.RemoteAddr,
+		reader:      r.Body,
+		writer:      writeFlusher{w: w, f: flusher},
+		remote:      r.RemoteAddr,
+		correlation: r.RemoteAddr,
 	}
 	h(stream)
 }

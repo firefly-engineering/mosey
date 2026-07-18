@@ -219,13 +219,15 @@ func (b *Backend) handleConn(conn *net.UnixConn) {
 	remote, err := peerCredsRemoteID(conn)
 	if err != nil {
 		// Couldn't read peer creds — refuse the stream rather than
-		// hand the handler a connection with an empty RemoteID, which
-		// would alias with every other no-creds connection in the
-		// auth identity map.
+		// hand the handler a connection with an empty CorrelationID,
+		// which would alias with every other no-creds connection in
+		// the auth identity map.
 		_ = conn.Close()
 		return
 	}
-	h(&stream{conn: conn, remote: remote})
+	// The peercreds string is both the log tag and the kernel-attested
+	// correlation handle; auth.Wrap keys on CorrelationID.
+	h(&stream{conn: conn, remote: remote, correlation: remote})
 }
 
 // parseUnixEndpoint accepts either `unix:///path/to/sock` or a bare

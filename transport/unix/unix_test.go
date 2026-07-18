@@ -62,11 +62,13 @@ func TestBackend_DialEchoesBytes(t *testing.T) {
 	}
 }
 
-// TestBackend_RemoteIDStableAcrossDials proves the server-side
-// RemoteID is the same across two streams from the same caller
+// TestBackend_CorrelationIDStableAcrossDials proves the server-side
+// CorrelationID is the same across two streams from the same caller
 // process. This is the property [auth.Wrap] depends on to correlate
 // the auth handshake stream with the subsequent application stream.
-func TestBackend_RemoteIDStableAcrossDials(t *testing.T) {
+// For unix the kernel-attested peercreds string is both the
+// correlation handle and the RemoteID log tag, so they match.
+func TestBackend_CorrelationIDStableAcrossDials(t *testing.T) {
 	t.Parallel()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -81,7 +83,12 @@ func TestBackend_RemoteIDStableAcrossDials(t *testing.T) {
 	)
 	server.Handle(testProto, func(s transport.Stream) {
 		seenMu.Lock()
-		seen = append(seen, s.RemoteID())
+		// Assert RemoteID mirrors CorrelationID for unix, then track
+		// the correlation handle for the stability checks below.
+		if s.RemoteID() != s.CorrelationID() {
+			t.Errorf("unix RemoteID %q != CorrelationID %q", s.RemoteID(), s.CorrelationID())
+		}
+		seen = append(seen, s.CorrelationID())
 		seenMu.Unlock()
 		// Write one byte back so the client can synchronize on it
 		// before closing — closing the stream too eagerly races the
@@ -118,13 +125,13 @@ func TestBackend_RemoteIDStableAcrossDials(t *testing.T) {
 	seenMu.Lock()
 	defer seenMu.Unlock()
 	if len(seen) != 2 {
-		t.Fatalf("seen %d RemoteIDs, want 2: %v", len(seen), seen)
+		t.Fatalf("seen %d CorrelationIDs, want 2: %v", len(seen), seen)
 	}
 	if seen[0] != seen[1] {
-		t.Errorf("RemoteID changed between dials: %q vs %q", seen[0], seen[1])
+		t.Errorf("CorrelationID changed between dials: %q vs %q", seen[0], seen[1])
 	}
 	if !strings.HasPrefix(seen[0], "unix:uid=") || !strings.Contains(seen[0], ":pid=") {
-		t.Errorf("RemoteID shape = %q, want unix:uid=N:pid=M", seen[0])
+		t.Errorf("CorrelationID shape = %q, want unix:uid=N:pid=M", seen[0])
 	}
 }
 
