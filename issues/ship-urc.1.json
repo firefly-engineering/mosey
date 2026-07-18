@@ -1,7 +1,9 @@
 {
   "assignee": "",
   "blocked_by": [],
-  "blocks": [],
+  "blocks": [
+    "ship-urc.2"
+  ],
   "created": "2026-07-18T05:48:54Z",
   "description": "New caps package importing no other mosey pkg. Re-home wallet.Caps onto caps.Caps; preserve String/ParseCaps delegation text byte-for-byte (frozen wire).",
   "id": "ship-urc.1",
@@ -11,5 +13,5 @@
   "status": "open",
   "title": "caps leaf package: Caps{Write,Resize,Forge} + Grant{Owner,Caps}",
   "type": "task",
-  "updated_at": "2026-07-18T05:48:54Z"
+  "updated_at": "2026-07-18T05:48:55Z"
 }
