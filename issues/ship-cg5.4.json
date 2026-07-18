@@ -3,7 +3,9 @@
   "blocked_by": [
     "ship-cg5.3"
   ],
-  "blocks": [],
+  "blocks": [
+    "ship-cg5.5"
+  ],
   "created": "2026-07-18T05:48:54Z",
   "description": "state becomes the token; loopback http.Server + done channel stay as caller glue after Complete returns.",
   "id": "ship-cg5.4",
@@ -13,5 +15,5 @@
   "status": "open",
   "title": "Migrate authorize (CLI) flow",
   "type": "task",
-  "updated_at": "2026-07-18T05:48:55Z"
+  "updated_at": "2026-07-18T05:48:56Z"
 }
