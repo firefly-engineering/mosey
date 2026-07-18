@@ -10,7 +10,6 @@ import (
 	"github.com/creack/pty"
 
 	"github.com/firefly-engineering/mosey/auth"
-	"github.com/firefly-engineering/mosey/streambuf"
 	"github.com/firefly-engineering/mosey/transport"
 )
 
@@ -43,20 +42,6 @@ func readResumeSeq(r io.Reader) (uint64, error) {
 		shift += 7
 	}
 	return 0, fmt.Errorf("resume_seq varint overflow")
-}
-
-// encodeResumeSeq is the encoder counterpart of [readResumeSeq].
-// Returns 1–10 bytes — proto-wire varint format.
-func encodeResumeSeq(v uint64) []byte {
-	var out [10]byte
-	i := 0
-	for v >= 0x80 {
-		out[i] = byte(v) | 0x80
-		v >>= 7
-		i++
-	}
-	out[i] = byte(v)
-	return out[:i+1]
 }
 
 // outputRingCapacity bounds the PTY-output replay buffer. ~256 KiB
@@ -482,10 +467,4 @@ func (s *Session) pumpOutput() {
 			return
 		}
 	}
-}
-
-// newOutputRing is a thin wrapper so tests can swap in a smaller
-// ring for replay-edge cases.
-func newOutputRing() *streambuf.OutputRing {
-	return streambuf.NewOutputRing(outputRingCapacity)
 }

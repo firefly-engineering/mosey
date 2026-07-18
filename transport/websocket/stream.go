@@ -71,12 +71,10 @@ func (s *stream) Close() error {
 	return s.closeErr
 }
 
-// CloseWrite isn't a thing on WebSocket — the Close frame is a
-// full-connection close, not a half-close. mosey's existing
-// callers (auth.Wrap, attach.Run, vterm) never call CloseWrite on
-// the streams they use; returning ErrUnsupported keeps any future
-// caller from quietly believing they sent a one-way FIN.
-func (s *stream) CloseWrite() error { return transport.ErrUnsupported }
+// WebSocket has no half-close — the Close frame is a full-connection
+// close — so the stream deliberately does not implement
+// [transport.HalfCloser]. Callers that want a one-way FIN type-assert
+// and skip it when absent.
 
 // RemoteID returns a string identifying the remote peer:
 //

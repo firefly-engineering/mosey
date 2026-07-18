@@ -27,11 +27,6 @@ var ErrUnsupportedScheme = errors.New("transport: endpoint scheme not supported 
 type Stream interface {
 	io.ReadWriteCloser
 
-	// CloseWrite half-closes the local write side so the peer sees
-	// a clean EOF on its read. Optional: backends that can't model
-	// half-close (raw TCP without framing) return [ErrUnsupported].
-	CloseWrite() error
-
 	// RemoteID returns a backend-specific identifier for the remote
 	// peer (libp2p peer id, TLS subject CN, etc.). Used for log
 	// tagging; not for authentication. May be empty when the
@@ -40,10 +35,21 @@ type Stream interface {
 	RemoteID() string
 }
 
-// ErrUnsupported is returned by optional [Stream] methods when the
-// underlying transport can't honor the request (e.g. CloseWrite on
-// a transport without half-close semantics).
-var ErrUnsupported = errors.New("transport: operation not supported by this backend")
+// HalfCloser is the optional half-close capability, kept off the
+// mandatory [Stream] surface. Backends whose streams can signal a
+// one-way FIN (unix sockets, libp2p muxer streams, the HTTP/2 client
+// request body) implement it; backends that can't model half-close
+// (WebSocket, the HTTP/2 server response) simply don't. Callers that
+// want the peer to see a clean EOF type-assert for it:
+//
+//	if hc, ok := s.(HalfCloser); ok {
+//		_ = hc.CloseWrite()
+//	}
+type HalfCloser interface {
+	// CloseWrite half-closes the local write side so the peer sees a
+	// clean EOF on its read, without disturbing the read side.
+	CloseWrite() error
+}
 
 // Handler is invoked for each inbound stream of a registered
 // protocol. The handler owns the stream — it must Close it before

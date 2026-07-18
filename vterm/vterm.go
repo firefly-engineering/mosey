@@ -130,7 +130,7 @@ func Run(ctx context.Context, opts Options, argv []string) error {
 		cmd:           cmd,
 		ptyf:          ptmx,
 		mode:          mode,
-		output:        newOutputRing(),
+		output:        streambuf.NewOutputRing(outputRingCapacity),
 		clients:       map[int64]*sessionClient{},
 		pendingResize: map[string]pendingResize{},
 	}

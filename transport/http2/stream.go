@@ -69,11 +69,10 @@ func (s *serverStream) Close() error {
 	return nil
 }
 
-// CloseWrite isn't a thing on the server side: returning from the
-// handler is the only way to end the response body. Implementations
-// must signal "I'm done writing" by closing the stream entirely.
-// We return ErrUnsupported so callers know to use Close instead.
-func (s *serverStream) CloseWrite() error { return transport.ErrUnsupported }
+// serverStream deliberately does not implement [transport.HalfCloser]:
+// returning from the handler is the only way to end the response body,
+// so there is no half-close motion to expose. Callers signal "done
+// writing" by closing the stream entirely.
 
 // RemoteID returns the client's [http.Request.RemoteAddr] — typically
 // the peer's IP:port. HTTPS / mTLS deployments can plumb in cert
