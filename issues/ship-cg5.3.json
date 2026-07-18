@@ -1,0 +1,15 @@
+{
+  "assignee": "",
+  "blocked_by": [],
+  "blocks": [],
+  "created": "2026-07-18T05:48:54Z",
+  "description": "connKey + authed transport live in an ephemeral gateway map keyed by token (NOT the store). Preserve /ws?token= contract (web.go:261).",
+  "id": "ship-cg5.3",
+  "labels": [],
+  "parent": "ship-cg5",
+  "priority": 2,
+  "status": "open",
+  "title": "Migrate login flow (ephemeral secret map)",
+  "type": "task",
+  "updated_at": "2026-07-18T05:48:54Z"
+}
