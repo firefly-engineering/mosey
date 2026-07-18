@@ -1,7 +1,9 @@
 {
   "assignee": "",
   "blocked_by": [],
-  "blocks": [],
+  "blocks": [
+    "ship-lv8.2"
+  ],
   "created": "2026-07-18T05:48:55Z",
   "description": "ClientConfig/HostConfig. DialClient (wrapped, once) + BuildClientBackends (raw Multi). buildClientAuth (wallet\u003ecert\u003epsk). Internal closer-defer teardown; drop returned cleanup func.",
   "id": "ship-lv8.1",
@@ -11,5 +13,5 @@
   "status": "open",
   "title": "Create moseynet: configs, DialClient + BuildClientBackends, buildClientAuth",
   "type": "task",
-  "updated_at": "2026-07-18T05:48:55Z"
+  "updated_at": "2026-07-18T05:48:56Z"
 }
