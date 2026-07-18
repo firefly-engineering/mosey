@@ -1,0 +1,15 @@
+{
+  "assignee": "",
+  "blocked_by": [],
+  "blocks": [],
+  "created": "2026-07-18T05:48:55Z",
+  "description": "Replace dialControl's hand-rolled 4-backend + 5-rung close ladder. BEHAVIOR CHANGE: control gains a wallet auth path (intended).",
+  "id": "ship-lv8.3",
+  "labels": [],
+  "parent": "ship-lv8",
+  "priority": 2,
+  "status": "open",
+  "title": "Migrate control to DialClient (gains wallet auth)",
+  "type": "task",
+  "updated_at": "2026-07-18T05:48:55Z"
+}
