@@ -4,7 +4,9 @@
     "ship-urc.1",
     "ship-urc.2"
   ],
-  "blocks": [],
+  "blocks": [
+    "ship-7ot"
+  ],
   "created": "2026-07-18T05:48:54Z",
   "description": "Identity{Owner bool; Caps caps.Caps}; keep CanWrite/CanResize/IsOwner as the read seam (Owner || Caps.Has). Migrate producers (psk, cert, wallet, launch). ACCEPTANCE: zero vterm/ diff + green tests.",
   "id": "ship-urc.3",
