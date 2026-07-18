@@ -1,6 +1,8 @@
 {
   "assignee": "",
-  "blocked_by": [],
+  "blocked_by": [
+    "ship-cg5.1"
+  ],
   "blocks": [],
   "created": "2026-07-18T05:48:54Z",
   "description": "Simplest flow: content-only, take-once, EncodeChain in caller. Keep {token,content_hex}/{grant_base64} byte-identical so web_test.go:389 stays green.",
@@ -11,5 +13,5 @@
   "status": "open",
   "title": "Migrate grant flow to Prepare/Complete",
   "type": "task",
-  "updated_at": "2026-07-18T05:48:54Z"
+  "updated_at": "2026-07-18T05:48:55Z"
 }

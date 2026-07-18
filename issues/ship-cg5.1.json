@@ -1,7 +1,9 @@
 {
   "assignee": "",
   "blocked_by": [],
-  "blocks": [],
+  "blocks": [
+    "ship-cg5.2"
+  ],
   "created": "2026-07-18T05:48:54Z",
   "description": "Additive. Prepare/Complete, in-mem TokenStore adapter, table test with NO httptest. Invariant: store holds non-secret content only.",
   "id": "ship-cg5.1",
@@ -11,5 +13,5 @@
   "status": "open",
   "title": "signing/ pkg + injected TokenStore + unit tests",
   "type": "task",
-  "updated_at": "2026-07-18T05:48:54Z"
+  "updated_at": "2026-07-18T05:48:55Z"
 }
