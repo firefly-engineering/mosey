@@ -1,0 +1,15 @@
+{
+  "assignee": "",
+  "blocked_by": [],
+  "blocks": [],
+  "created": "2026-07-18T05:48:54Z",
+  "description": "Remove putLogin/getLogin/takeGrant/newLoginToken once callers are off them; verify complexity vanished from callers, not moved.",
+  "id": "ship-cg5.5",
+  "labels": [],
+  "parent": "ship-cg5",
+  "priority": 2,
+  "status": "open",
+  "title": "Delete old token-store helpers + deletion test",
+  "type": "task",
+  "updated_at": "2026-07-18T05:48:54Z"
+}
