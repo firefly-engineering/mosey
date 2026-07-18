@@ -1,6 +1,8 @@
 {
   "assignee": "",
-  "blocked_by": [],
+  "blocked_by": [
+    "ship-lv8.1"
+  ],
   "blocks": [],
   "created": "2026-07-18T05:48:55Z",
   "description": "ClientAuthFromChain(connKey,chain,expectSession) -\u003e Authenticator, closing the 3rd WalletAuth constructor gap. weblogin calls signing.Complete then moseynet.ClientAuthFromChain then auth.Wrap(raw,...) per browser.",
@@ -11,5 +13,5 @@
   "status": "open",
   "title": "Add moseynet.ClientAuthFromChain; migrate weblogin",
   "type": "task",
-  "updated_at": "2026-07-18T05:48:55Z"
+  "updated_at": "2026-07-18T05:48:56Z"
 }
