@@ -18,8 +18,8 @@ import (
 // PSK auth handshake → PTY bytes echo through `cat`. The WebSocket
 // backend's per-stream connection model only works for auth
 // correlation because the dialer offers a stable per-process token
-// in `Sec-WebSocket-Protocol` and the server uses it as RemoteID;
-// this test is the proof.
+// in `Sec-WebSocket-Protocol` and the server exposes it as
+// CorrelationID; this test is the proof.
 func TestVterm_WebSocket_AttachRoundTrip(t *testing.T) {
 	t.Parallel()
 

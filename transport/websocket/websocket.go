@@ -283,7 +283,7 @@ func (b *Backend) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		// Upgrader has already written an HTTP error response.
 		return
 	}
-	h(&stream{conn: conn, remote: "ws-peer:" + peerToken})
+	h(&stream{conn: conn, remote: r.RemoteAddr, correlation: "ws-peer:" + peerToken})
 }
 
 // selectPeerToken scans the Sec-WebSocket-Protocol values for the

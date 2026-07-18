@@ -82,11 +82,11 @@ type sessionClient struct {
 	stream   transport.Stream
 	identity auth.Identity
 
-	// remote is the auth-layer remote id captured at admit time.
+	// correlation is the stream CorrelationID captured at admit time.
 	// Used by control.go to map an inbound /mosey/control/ stream
-	// back to the right sessionClient when recording its
-	// per-client geometry.
-	remote string
+	// back to the right sessionClient when recording its per-client
+	// geometry — the same dialer correlates across both streams.
+	correlation string
 
 	// outCh is the per-client live output channel. The session's
 	// pty-pump fan-outs every byte-chunk onto every client's outCh
@@ -140,7 +140,7 @@ func (s *Session) addClient(stream transport.Stream) *sessionClient {
 	s.mu.Unlock()
 	if c != nil && pendingCols > 0 && pendingRows > 0 {
 		if err := applyPTYSize(s.ptyf, pendingCols, pendingRows); err != nil {
-			s.logger.Warn("apply cached resize on attach", "peer", c.remote, "err", err)
+			s.logger.Warn("apply cached resize on attach", "peer", c.correlation, "err", err)
 		}
 	}
 	return c
@@ -190,23 +190,23 @@ func (s *Session) addClientLocked(stream transport.Stream, identity auth.Identit
 
 	s.nextID++
 	c := &sessionClient{
-		id:       s.nextID,
-		stream:   stream,
-		identity: identity,
-		remote:   stream.RemoteID(),
-		outCh:    make(chan []byte, clientBufferChunks),
-		done:     make(chan struct{}),
-		canWrite: canWrite,
+		id:          s.nextID,
+		stream:      stream,
+		identity:    identity,
+		correlation: stream.CorrelationID(),
+		outCh:       make(chan []byte, clientBufferChunks),
+		done:        make(chan struct{}),
+		canWrite:    canWrite,
 	}
-	// Apply any resize the same remote sent on /mosey/control
-	// before its /mosey/pty stream landed. Drain on attach so a
-	// stale entry doesn't bias a future client that happens to
-	// reuse the remote string.
+	// Apply any resize the same peer sent on /mosey/control before
+	// its /mosey/pty stream landed. Drain on attach so a stale entry
+	// doesn't bias a future client that happens to reuse the
+	// correlation string.
 	var ptyCols, ptyRows uint32
-	if pending, ok := s.pendingResize[c.remote]; ok {
+	if pending, ok := s.pendingResize[c.correlation]; ok {
 		c.cols = pending.cols
 		c.rows = pending.rows
-		delete(s.pendingResize, c.remote)
+		delete(s.pendingResize, c.correlation)
 	}
 	s.clients[c.id] = c
 	if s.mode == ModePrimaryObserver && canWrite {
@@ -218,15 +218,15 @@ func (s *Session) addClientLocked(stream transport.Stream, identity auth.Identit
 	return c, ptyCols, ptyRows
 }
 
-// clientByRemoteIDLocked returns the most recently-added client
-// whose RemoteID matches remote, or nil if none. Caller must hold
-// s.mu. The "most recent" tiebreaker matters when one peer opens
-// several streams — control messages apply to that peer's latest
-// PTY attach.
-func (s *Session) clientByRemoteIDLocked(remote string) *sessionClient {
+// clientByCorrelationLocked returns the most recently-added client
+// whose CorrelationID matches correlation, or nil if none. Caller
+// must hold s.mu. The "most recent" tiebreaker matters when one peer
+// opens several streams — control messages apply to that peer's
+// latest PTY attach.
+func (s *Session) clientByCorrelationLocked(correlation string) *sessionClient {
 	var latest *sessionClient
 	for _, c := range s.clients {
-		if c.remote != remote {
+		if c.correlation != correlation {
 			continue
 		}
 		if latest == nil || c.id > latest.id {
@@ -236,25 +236,25 @@ func (s *Session) clientByRemoteIDLocked(remote string) *sessionClient {
 	return latest
 }
 
-// applyResizeForRemote records the supplied cols/rows under the
-// client owning remote, then recomputes the effective PTY size
+// applyResizeForCorrelation records the supplied cols/rows under the
+// client owning correlation, then recomputes the effective PTY size
 // (min across every client with non-zero geometry). Returns the
 // applied PTY size — zero/zero when no clients have reported a
 // geometry yet.
 //
-// If no PTY client exists yet for remote, the resize is cached
-// in pendingResize so the next addClient for the same remote can
+// If no PTY client exists yet for correlation, the resize is cached
+// in pendingResize so the next addClient for the same correlation can
 // apply it. Control and PTY streams arrive on independent
 // goroutines with no ordering guarantee — without the cache,
 // an initial attach.Run() resize that lands at the vterm before
 // its bridgeClient goroutine has registered the client gets
 // dropped, and the child stays at the PTY's 80×24 default until
 // a SIGWINCH (terminal wiggle) fires another resize.
-func (s *Session) applyResizeForRemote(remote string, cols, rows uint32) (cols2, rows2 uint32, err error) {
+func (s *Session) applyResizeForCorrelation(correlation string, cols, rows uint32) (cols2, rows2 uint32, err error) {
 	s.mu.Lock()
-	c := s.clientByRemoteIDLocked(remote)
+	c := s.clientByCorrelationLocked(correlation)
 	if c == nil {
-		s.pendingResize[remote] = pendingResize{cols: cols, rows: rows}
+		s.pendingResize[correlation] = pendingResize{cols: cols, rows: rows}
 		s.mu.Unlock()
 		return 0, 0, nil
 	}
@@ -306,11 +306,11 @@ func (s *Session) recomputeGeometryAfterRemoveLocked() {
 }
 
 // errResizeNoClient is the sentinel returned by
-// applyResizeForRemote when the resize comes from a remote that
+// applyResizeForCorrelation when the resize comes from a peer that
 // has no matching PTY client — typically because the peer opened
 // a control stream without a corresponding /mosey/pty/ session
 // (a misbehaving client or a race during teardown).
-var errResizeNoClient = fmt.Errorf("resize: no PTY client for remote")
+var errResizeNoClient = fmt.Errorf("resize: no PTY client for correlation")
 
 // setMode swaps the session's active mode. Owner-only; the
 // handler gates the check before calling this. The change applies
@@ -325,14 +325,14 @@ func (s *Session) setMode(m Mode) Mode {
 	return prev
 }
 
-// demoteRemote drops the write capability of the client matching
-// remote. If that client was the PrimaryObserver writer, the seat
+// demoteCorrelation drops the write capability of the client matching
+// correlation. If that client was the PrimaryObserver writer, the seat
 // becomes vacant. Returns true when a client was found + demoted,
 // false when no client matched (rare race during teardown).
-func (s *Session) demoteRemote(remote string) bool {
+func (s *Session) demoteCorrelation(correlation string) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	c := s.clientByRemoteIDLocked(remote)
+	c := s.clientByCorrelationLocked(correlation)
 	if c == nil {
 		return false
 	}

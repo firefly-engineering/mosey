@@ -241,12 +241,17 @@ func (b *Backend) Close() error {
 }
 
 // streamAdapter wraps a libp2p [network.Stream] to satisfy
-// [transport.Stream]. CloseWrite is native libp2p; RemoteID
-// returns the remote peer's libp2p multihash for log tagging.
+// [transport.Stream]. CloseWrite is native libp2p; the remote peer's
+// libp2p multihash is both the log tag and the cryptographically
+// attested correlation handle.
 type streamAdapter struct{ network.Stream }
 
 func (s *streamAdapter) CloseWrite() error { return s.Stream.CloseWrite() }
 func (s *streamAdapter) RemoteID() string  { return s.Stream.Conn().RemotePeer().String() }
+
+// CorrelationID returns the remote peer id — cryptographically
+// attested, so it is a stable, unforgeable correlation handle.
+func (s *streamAdapter) CorrelationID() string { return s.Stream.Conn().RemotePeer().String() }
 
 // parseEndpoint accepts a "libp2p:..." URL or a bare multiaddr and
 // returns the dial target.

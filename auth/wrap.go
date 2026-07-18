@@ -17,7 +17,7 @@ import (
 // requested application protocol. Server-side: call [Wrapped.Serve]
 // once to install the /mosey/auth/ listener; subsequent application
 // Handle calls are gated on a successful prior handshake from the
-// same remote peer (matched by [transport.Stream.RemoteID]).
+// same remote peer (matched by [transport.Stream.CorrelationID]).
 //
 // Streams returned to handlers carry the peer's [Identity] —
 // retrieve it via [IdentityOf]. Streams from a peer that hasn't
@@ -39,7 +39,7 @@ type Wrapped struct {
 	auth  Authenticator
 
 	mu         sync.Mutex
-	identities map[string]Identity // keyed by remote id
+	identities map[string]Identity // keyed by stream CorrelationID
 
 	localIdentityMu sync.RWMutex
 	localIdentity   Identity // most recent ClientHandshake result
@@ -55,9 +55,17 @@ func (w *Wrapped) Handle(proto string, h transport.Handler) {
 		return
 	}
 	w.inner.Handle(proto, func(s transport.Stream) {
-		remote := s.RemoteID()
+		corr := s.CorrelationID()
+		if corr == "" {
+			// The backend can't correlate this stream to a prior
+			// handshake — fail closed. An empty key would otherwise
+			// alias every uncorrelatable stream together in the
+			// identity map. Silent close, same posture as below.
+			_ = s.Close()
+			return
+		}
 		w.mu.Lock()
-		id, ok := w.identities[remote]
+		id, ok := w.identities[corr]
 		w.mu.Unlock()
 		if !ok {
 			// No prior auth for this peer. Refuse silently — same
@@ -160,8 +168,16 @@ func (w *Wrapped) Serve() {
 			}
 			return
 		}
+		corr := s.CorrelationID()
+		if corr == "" {
+			// A handshake succeeded but the backend can't give us a
+			// correlation handle to key the identity on — so no
+			// application stream could ever be matched to it. Fail
+			// closed rather than store under an empty, aliasing key.
+			return
+		}
 		w.mu.Lock()
-		w.identities[s.RemoteID()] = identity
+		w.identities[corr] = identity
 		w.mu.Unlock()
 		// Identity is now observable. Ack so the dialer's
 		// io.ReadFull in Wrapped.Dial unblocks and proceeds.

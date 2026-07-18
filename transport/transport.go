@@ -33,11 +33,25 @@ type Stream interface {
 	CloseWrite() error
 
 	// RemoteID returns a backend-specific identifier for the remote
-	// peer (libp2p peer id, TLS subject CN, etc.). Used for log
-	// tagging; not for authentication. May be empty when the
-	// backend can't attribute a stable identity (e.g. anonymous
-	// HTTP connections).
+	// peer (libp2p peer id, remote address, TLS subject, etc.),
+	// meant purely for log tagging. May be empty when the backend
+	// can't attribute one. Never an authentication or correlation
+	// input — that is [Stream.CorrelationID]'s job.
 	RemoteID() string
+
+	// CorrelationID returns an unauthenticated handle the auth wrap
+	// uses to link streams from the same dialer: two streams with
+	// equal, non-empty values are guaranteed to come from the same
+	// dialer instance (one client process), stable for that
+	// dialer's lifetime and identical across every stream it opens.
+	// It only *links* streams to an [auth] Identity the handshake
+	// already established — it never itself grants identity. A
+	// backend returns a non-empty value only if that value is
+	// unforgeable or unguessable within its trust domain
+	// (cryptographic, kernel-attested, or >=128-bit random); it
+	// returns "" when it cannot correlate, in which case the auth
+	// wrap refuses the stream. See docs/adr/0004-stream-correlation-seam.md.
+	CorrelationID() string
 }
 
 // ErrUnsupported is returned by optional [Stream] methods when the

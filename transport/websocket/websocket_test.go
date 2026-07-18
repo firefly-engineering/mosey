@@ -69,11 +69,13 @@ func TestBackend_DialEchoesBytes(t *testing.T) {
 	}
 }
 
-// TestBackend_RemoteIDStableAcrossDials proves the server-side
-// RemoteID is the same across two streams from the same backend.
+// TestBackend_CorrelationIDStableAcrossDials proves the server-side
+// CorrelationID is the same across two streams from the same backend.
 // This is the property [auth.Wrap] depends on to correlate the
-// auth handshake with the subsequent application stream.
-func TestBackend_RemoteIDStableAcrossDials(t *testing.T) {
+// auth handshake with the subsequent application stream. It also
+// checks RemoteID is now a plain log tag (a remote address, not the
+// correlation token).
+func TestBackend_CorrelationIDStableAcrossDials(t *testing.T) {
 	t.Parallel()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -82,13 +84,15 @@ func TestBackend_RemoteIDStableAcrossDials(t *testing.T) {
 	server, endpoint := newServer(t, ctx, nil)
 
 	var (
-		seen   []string
-		seenMu sync.Mutex
-		ready  = make(chan struct{}, 2)
+		seen    []string
+		remotes []string
+		seenMu  sync.Mutex
+		ready   = make(chan struct{}, 2)
 	)
 	server.Handle(testProto, func(s transport.Stream) {
 		seenMu.Lock()
-		seen = append(seen, s.RemoteID())
+		seen = append(seen, s.CorrelationID())
+		remotes = append(remotes, s.RemoteID())
 		seenMu.Unlock()
 		// Sync byte so the client can be sure the handler ran
 		// before closing — closing too eagerly races the WS
@@ -125,19 +129,29 @@ func TestBackend_RemoteIDStableAcrossDials(t *testing.T) {
 	seenMu.Lock()
 	defer seenMu.Unlock()
 	if len(seen) != 2 {
-		t.Fatalf("seen %d RemoteIDs, want 2: %v", len(seen), seen)
+		t.Fatalf("seen %d CorrelationIDs, want 2: %v", len(seen), seen)
 	}
 	if seen[0] != seen[1] {
-		t.Errorf("RemoteID changed between dials: %q vs %q", seen[0], seen[1])
+		t.Errorf("CorrelationID changed between dials: %q vs %q", seen[0], seen[1])
 	}
 	if !strings.HasPrefix(seen[0], "ws-peer:") {
-		t.Errorf("RemoteID shape = %q, want ws-peer:<token>", seen[0])
+		t.Errorf("CorrelationID shape = %q, want ws-peer:<token>", seen[0])
+	}
+	// RemoteID is now just a log tag — a remote address, never the
+	// correlation token.
+	for i, r := range remotes {
+		if r == "" {
+			t.Errorf("RemoteID #%d empty, want a remote address", i)
+		}
+		if strings.HasPrefix(r, "ws-peer:") {
+			t.Errorf("RemoteID #%d = %q leaks the correlation token", i, r)
+		}
 	}
 }
 
 // TestBackend_TwoBackendsHaveDifferentTokens covers the negative:
 // two separate dialer backends mint independent tokens, so the
-// server sees different RemoteIDs. Without this property,
+// server sees different CorrelationIDs. Without this property,
 // auth.Wrap would alias unrelated peers.
 func TestBackend_TwoBackendsHaveDifferentTokens(t *testing.T) {
 	t.Parallel()
@@ -154,7 +168,7 @@ func TestBackend_TwoBackendsHaveDifferentTokens(t *testing.T) {
 	)
 	server.Handle(testProto, func(s transport.Stream) {
 		seenMu.Lock()
-		seen = append(seen, s.RemoteID())
+		seen = append(seen, s.CorrelationID())
 		seenMu.Unlock()
 		_, _ = s.Write([]byte{0x01})
 		ready <- struct{}{}
@@ -187,7 +201,7 @@ func TestBackend_TwoBackendsHaveDifferentTokens(t *testing.T) {
 	seenMu.Lock()
 	defer seenMu.Unlock()
 	if seen[0] == seen[1] {
-		t.Errorf("distinct backends produced the same RemoteID %q", seen[0])
+		t.Errorf("distinct backends produced the same CorrelationID %q", seen[0])
 	}
 }
 
