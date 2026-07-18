@@ -1,6 +1,8 @@
 {
   "assignee": "",
-  "blocked_by": [],
+  "blocked_by": [
+    "ship-lv8.1"
+  ],
   "blocks": [],
   "created": "2026-07-18T05:48:55Z",
   "description": "Host{Transport,Serve,Authenticator} (Authenticator surfaced for cert revocation watcher). buildHostAuth (MultiPSK owner+reader). Listen-URI-\u003ebackend map + loadTLS(cert,key,nextProtos) killing the twice-inlined tls.Config. transport.Multi untouched.",
@@ -11,5 +13,5 @@
   "status": "open",
   "title": "Add ServeHost -\u003e Host handle + buildHostAuth + loadTLS; migrate launch",
   "type": "task",
-  "updated_at": "2026-07-18T05:48:55Z"
+  "updated_at": "2026-07-18T05:48:56Z"
 }
