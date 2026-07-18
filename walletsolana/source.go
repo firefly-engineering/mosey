@@ -15,21 +15,30 @@ import (
 	"github.com/firefly-engineering/mosey/wallet"
 )
 
-// rpcCaller performs one JSON-RPC call. Injectable so the poll/snapshot
-// logic is testable without a live node.
-type rpcCaller func(ctx context.Context, method string, params []any) (json.RawMessage, error)
+// Caller performs one JSON-RPC call. It is the injection point for the
+// node connection: tests (in this package or any other) can drive the
+// account-layout wiring — PDA derivation, message compilation, the
+// getProgramAccounts decode — without a live node. nil means "dial the
+// RPCEndpoint over HTTP".
+type Caller func(ctx context.Context, method string, params []any) (json.RawMessage, error)
+
+// errNoSession is returned by the read path (Snapshot/VerifyNow/Refresh)
+// when the Source was constructed without a SessionKey. Write and
+// dashboard callers (Build*, SubmitSigned, the local signers,
+// SessionsByOwner) pass the session per call and never hit this.
+var errNoSession = errors.New("walletsolana: no SessionKey configured; this Source is write/dashboard-only")
 
 // Options configures a Source.
 type Options struct {
 	RPCEndpoint  string            // e.g. https://api.devnet.solana.com
 	WSEndpoint   string            // override; default derives ws(s):// from RPCEndpoint
 	ProgramID    string            // base58 program id
-	SessionKey   ed25519.PublicKey // the session this server hosts
+	SessionKey   ed25519.PublicKey // the session this server hosts; omit for write/dashboard-only use
 	MaxStaleness time.Duration     // fail-open budget (default 30s)
 	PollInterval time.Duration     // backstop poll (default 10s)
 	Commitment   string            // default "confirmed"
 	Now          func() time.Time  // default time.Now
-	call         rpcCaller         // test injection; nil → HTTP
+	Call         Caller            // node connection / test injection; nil → HTTP(RPCEndpoint)
 	dialWS       wsDialer          // test injection; nil → gorilla dial of WSEndpoint
 }
 
@@ -44,7 +53,7 @@ type Source struct {
 	reconcileInterval time.Duration
 	commitment        string
 	now               func() time.Time
-	call              rpcCaller
+	call              Caller
 	wsEndpoint        string
 	dialWS            wsDialer
 
@@ -60,7 +69,11 @@ func New(opts Options) (*Source, error) {
 	if opts.ProgramID == "" {
 		return nil, errors.New("walletsolana: ProgramID required")
 	}
-	if len(opts.SessionKey) != ed25519.PublicKeySize {
+	// SessionKey is the read path's input (which session to watch); write
+	// and dashboard callers omit it. Validate it only when present — a
+	// malformed key still fails fast — and defer the "missing" case to the
+	// read methods, which return errNoSession.
+	if len(opts.SessionKey) != 0 && len(opts.SessionKey) != ed25519.PublicKeySize {
 		return nil, errors.New("walletsolana: SessionKey must be a 32-byte public key")
 	}
 	s := &Source{
@@ -71,7 +84,7 @@ func New(opts Options) (*Source, error) {
 		reconcileInterval: orDur(opts.PollInterval, 10*time.Second),
 		commitment:        orStr(opts.Commitment, "confirmed"),
 		now:               opts.Now,
-		call:              opts.call,
+		call:              opts.Call,
 		wsEndpoint:        opts.WSEndpoint,
 		dialWS:            opts.dialWS,
 	}
@@ -87,7 +100,7 @@ func New(opts Options) (*Source, error) {
 	// Push path: default the WS endpoint from the RPC URL and the dialer
 	// to gorilla. Left nil (push disabled, poll-only) when neither a WS
 	// endpoint nor an RPC URL to derive one from is available — e.g. unit
-	// tests that inject `call` directly.
+	// tests that inject Call directly.
 	if s.wsEndpoint == "" && opts.RPCEndpoint != "" {
 		s.wsEndpoint = deriveWSEndpoint(opts.RPCEndpoint)
 	}
@@ -101,6 +114,9 @@ func New(opts Options) (*Source, error) {
 // cached snapshot is older than MaxStaleness; err is non-nil only before
 // the first successful refresh (cold start).
 func (s *Source) Snapshot() (wallet.Snapshot, bool, error) {
+	if len(s.sessionKey) == 0 {
+		return nil, false, errNoSession
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.snap == nil {
@@ -166,6 +182,9 @@ type rpcAccount struct {
 // Refresh fetches the program's accounts, finds this session and its
 // live grants, and swaps in a fresh snapshot.
 func (s *Source) Refresh(ctx context.Context) error {
+	if len(s.sessionKey) == 0 {
+		return errNoSession
+	}
 	raw, err := s.call(ctx, "getProgramAccounts", []any{
 		s.programID,
 		map[string]any{"encoding": "base64", "commitment": s.commitment},
@@ -236,7 +255,7 @@ func (s *Source) Refresh(ctx context.Context) error {
 	return nil
 }
 
-func httpCaller(endpoint string) rpcCaller {
+func httpCaller(endpoint string) Caller {
 	client := &http.Client{Timeout: 15 * time.Second}
 	return func(ctx context.Context, method string, params []any) (json.RawMessage, error) {
 		body, err := json.Marshal(map[string]any{

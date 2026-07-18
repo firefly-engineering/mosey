@@ -114,15 +114,16 @@ func (c *onchainConfig) register(fs *flag.FlagSet, withSessionFlag bool) {
 	}
 }
 
-// owner loads the owner Solana keypair and a Source bound to sessionPub.
-func (c *onchainConfig) source(sessionPub ed25519.PublicKey) (*walletsolana.Source, error) {
+// source builds a Source for the owner-signed CLI commands. These take the
+// session per call (Grant/TransferOwnership/BumpEpoch), so the Source needs
+// no SessionKey — only the RPC endpoint and program id.
+func (c *onchainConfig) source() (*walletsolana.Source, error) {
 	if c.program == "" {
 		return nil, errors.New("--program is required (or set $MOSEY_DEVNET_PROGRAM)")
 	}
 	return walletsolana.New(walletsolana.Options{
 		RPCEndpoint: c.rpc,
 		ProgramID:   c.program,
-		SessionKey:  sessionPub,
 	})
 }
 
@@ -176,7 +177,7 @@ func runSessionRegister(args []string, stdout, stderr *os.File) int {
 	if created {
 		fmt.Fprintf(stderr, "mosey session register: generated new session key at %s\n", keyPath)
 	}
-	src, err := c.source(sessionKey.Public().(ed25519.PublicKey))
+	src, err := c.source()
 	if err != nil {
 		fmt.Fprintln(stderr, "mosey session register:", err)
 		return 2
@@ -317,7 +318,7 @@ func setupOwnerSession(c *onchainConfig, stderr *os.File, prefix string) (ed2551
 		fmt.Fprintln(stderr, prefix+":", err)
 		return nil, nil, nil, 2
 	}
-	src, err := c.source(sessionPub)
+	src, err := c.source()
 	if err != nil {
 		fmt.Fprintln(stderr, prefix+":", err)
 		return nil, nil, nil, 2

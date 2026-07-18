@@ -137,14 +137,13 @@ func runWeb(args []string, stderr *os.File) int {
 	if *walletLogin {
 		gw.walletLogin = true
 		if multiSession {
-			// The dashboard uses only the multi-session read path
-			// (SessionsByOwner), which ignores SessionKey; New still wants
-			// a 32-byte key, so pass a placeholder. Snapshot/Refresh are
-			// never called on this Source.
+			// The dashboard + governance paths (SessionsByOwner, Build*,
+			// SubmitSigned) take the session per call and never read
+			// Source.SessionKey, so this Source is constructed without one.
+			// Snapshot/Refresh (the read path) are never called on it.
 			src, err := walletsolana.New(walletsolana.Options{
 				RPCEndpoint: *walletRPC,
 				ProgramID:   *walletProgram,
-				SessionKey:  make(ed25519.PublicKey, ed25519.PublicKeySize),
 			})
 			if err != nil {
 				fmt.Fprintln(stderr, "mosey web: dashboard source:", err)
