@@ -1,0 +1,14 @@
+{
+  "assignee": "",
+  "blocked_by": [],
+  "blocks": [],
+  "created": "2026-07-18T05:48:54Z",
+  "description": "cmd/internal/moseynet owns client/host stack assembly + credential selection. Separate ClientConfig/HostConfig. Transport.Close owns teardown. Facade-for-optionality (no varying adapter yet; do NOT build backend-selection machinery). See docs/adr/0003.",
+  "id": "ship-lv8",
+  "labels": [],
+  "priority": 2,
+  "status": "open",
+  "title": "Consolidate transport/auth assembly in moseynet (ADR-0003)",
+  "type": "epic",
+  "updated_at": "2026-07-18T05:48:54Z"
+}
