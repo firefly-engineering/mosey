@@ -228,12 +228,6 @@ func (b *Backend) Dial(ctx context.Context, endpoint, proto string) (transport.S
 	return &stream{conn: conn, remote: target.Scheme + "://" + target.Host}, nil
 }
 
-// Serve implements [transport.Transport]. The accept loop already
-// runs from New (via http.Server.Serve in its own goroutine); Serve
-// is a no-op so callers can use the same lifecycle pattern as other
-// backends.
-func (b *Backend) Serve() {}
-
 // Close implements [transport.Transport].
 func (b *Backend) Close() error {
 	var err error

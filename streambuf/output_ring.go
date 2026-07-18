@@ -49,13 +49,14 @@ func NewOutputRing(capacity int) *OutputRing {
 // retains.
 func (r *OutputRing) Capacity() int { return r.capacity }
 
-// Write appends p, evicting oldest bytes if needed. Returns
-// (len(p), nil) — never partial, never an error. The returned `seq`
-// is the sequence of the *first* byte of p as written into the ring.
-// (Callers needing the sequence of the last byte add len(p)-1.)
+// Write appends p, evicting oldest bytes if needed. Never partial,
+// never an error: it returns firstSeq — the sequence of the *first*
+// byte of p as written into the ring — and n == len(p). (Callers
+// needing the sequence of the last byte add len(p)-1.)
 //
-// Implements [io.Writer] minus the seq return so callers that don't
-// care about replay can [io.Copy] straight in via [OutputRing.WriteBytes].
+// The (firstSeq, n) return is deliberately not [io.Writer]-shaped:
+// the sequence number is load-bearing for replay, so OutputRing is
+// not an io.Writer and cannot be used as an [io.Copy] destination.
 func (r *OutputRing) Write(p []byte) (firstSeq uint64, n int) {
 	if len(p) == 0 {
 		r.mu.Lock()

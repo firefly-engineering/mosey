@@ -83,7 +83,11 @@ func TestBackend_RoundTrip(t *testing.T) {
 	}
 
 	// Half-close write side; server should see EOF on its Read.
-	if err := stream.CloseWrite(); err != nil {
+	hc, ok := stream.(transport.HalfCloser)
+	if !ok {
+		t.Fatalf("http2 client stream should implement transport.HalfCloser")
+	}
+	if err := hc.CloseWrite(); err != nil {
 		t.Fatalf("CloseWrite: %v", err)
 	}
 	select {

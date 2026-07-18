@@ -50,7 +50,11 @@ func TestBackend_DialEchoesBytes(t *testing.T) {
 	if _, err := stream.Write([]byte(sent)); err != nil {
 		t.Fatalf("Write: %v", err)
 	}
-	if err := stream.CloseWrite(); err != nil {
+	hc, ok := stream.(transport.HalfCloser)
+	if !ok {
+		t.Fatalf("unix stream should implement transport.HalfCloser")
+	}
+	if err := hc.CloseWrite(); err != nil {
 		t.Fatalf("CloseWrite: %v", err)
 	}
 	got, err := io.ReadAll(stream)

@@ -25,15 +25,18 @@ ownership:
   shepherd user. Shepherd owns the workspace-membership story,
   the resumable session ID model, and the persistent state.
 
-## What shepherd will pull from mosey
+## What shepherd pulls from mosey
 
-In its current form, shepherd vendors a copy of these primitives.
-The migration path is to swap the vendored copy for a direct
-dependency on `github.com/firefly-engineering/mosey` once the
-v0.1 surface is stable enough to commit to.
+Shepherd already depends on `github.com/firefly-engineering/mosey`
+directly — it no longer vendors a copy. This list is therefore the
+authoritative *committed surface*: the exported API mosey keeps
+stable for shepherd. Anything exported but absent from this list and
+unused inside mosey is a deletion candidate before the v0.1 surface
+freezes.
 
-Specifically, shepherd needs:
+Specifically, shepherd imports:
 
+- `api` for the wire protocol IDs and message types.
 - `transport.Transport` + libp2p backend for cross-host attaches.
 - `auth.Wrap` + cert authenticator for workspace membership.
 - `vterm.Session` for the agent-side process under PTY.

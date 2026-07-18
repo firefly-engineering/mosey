@@ -86,7 +86,9 @@ func TestBYOHost(t *testing.T) {
 	if _, err := s.Write([]byte("hi-mosey")); err != nil {
 		t.Fatalf("write mosey: %v", err)
 	}
-	_ = s.CloseWrite()
+	if hc, ok := s.(transport.HalfCloser); ok {
+		_ = hc.CloseWrite()
+	}
 	select {
 	case got := <-gotMosey:
 		if got != "hi-mosey" {

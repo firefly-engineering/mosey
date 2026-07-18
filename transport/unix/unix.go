@@ -156,11 +156,6 @@ func (b *Backend) Dial(ctx context.Context, endpoint, proto string) (transport.S
 	return &stream{conn: uc, remote: "unix://" + path}, nil
 }
 
-// Serve implements [transport.Transport]. Unix's accept loop is
-// already running from New (see acceptLoop); Serve is a no-op so
-// callers can use the same lifecycle pattern as other backends.
-func (b *Backend) Serve() {}
-
 // Close implements [transport.Transport]. Closes the listener and
 // removes the bound path. Already-open streams keep working until
 // the caller closes them.
