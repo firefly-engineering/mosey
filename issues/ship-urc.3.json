@@ -1,7 +1,8 @@
 {
   "assignee": "",
   "blocked_by": [
-    "ship-urc.1"
+    "ship-urc.1",
+    "ship-urc.2"
   ],
   "blocks": [],
   "created": "2026-07-18T05:48:54Z",
