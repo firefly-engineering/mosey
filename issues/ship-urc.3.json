@@ -1,6 +1,8 @@
 {
   "assignee": "",
-  "blocked_by": [],
+  "blocked_by": [
+    "ship-urc.1"
+  ],
   "blocks": [],
   "created": "2026-07-18T05:48:54Z",
   "description": "Identity{Owner bool; Caps caps.Caps}; keep CanWrite/CanResize/IsOwner as the read seam (Owner || Caps.Has). Migrate producers (psk, cert, wallet, launch). ACCEPTANCE: zero vterm/ diff + green tests.",
@@ -11,5 +13,5 @@
   "status": "open",
   "title": "Collapse auth.Identity to {Owner,Caps}; keep accessors",
   "type": "task",
-  "updated_at": "2026-07-18T05:48:54Z"
+  "updated_at": "2026-07-18T05:48:55Z"
 }
