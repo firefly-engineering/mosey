@@ -1,0 +1,14 @@
+{
+  "assignee": "",
+  "blocked_by": [],
+  "blocks": [],
+  "created": "2026-07-18T05:48:54Z",
+  "description": "Consolidate the three capability representations (wallet.Caps, cert.CapsBits, auth.Capabilities) into one caps leaf package. Owner stays structural via Grant{Owner,Caps}. No wire change. See docs/adr/0001. Scope: vocabulary only; Fold/resolveCaps policy is candidate #5, which must land AFTER this.",
+  "id": "ship-urc",
+  "labels": [],
+  "priority": 2,
+  "status": "open",
+  "title": "Unify capability vocabulary (ADR-0001)",
+  "type": "epic",
+  "updated_at": "2026-07-18T05:48:54Z"
+}
